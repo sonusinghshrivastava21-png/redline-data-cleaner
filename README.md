@@ -36,3 +36,25 @@ The model is a single straight expansion, so it ignores extractions for feed
 heating, reheat and gland leakage. Using `--actual-mw` on a known operating
 point gives an effective efficiency that absorbs those losses; reuse that value
 for prediction at other loads.
+
+### Reheat mode
+
+For reheat units, pass `--crh-pressure`, `--hrh-pressure` and `--hrh-temp`
+(pressures in `--pressure-unit`). The model then splits the turbine:
+
+```
+HP:     MS -> CRH pressure at η_HP, full MS flow
+IP/LP:  HRH -> condenser at η_IPLP, flow = MS flow × reheat fraction × IP/LP flow factor
+MW    = (HP work + IP/LP work) × η_mech × η_gen
+```
+
+- `--hp-eff` (default 85 %), or `--crh-temp` to compute HP efficiency from the measured CRH temperature
+- `--iplp-eff` (default 90 %)
+- `--rh-flow-frac`: reheat flow as % of MS flow, after HP heater extractions (default 90 %)
+- `--iplp-flow-factor`: average IP/LP flow as % of reheat flow, after deaerator and LP heater extractions (default 85 %). `--actual-mw` solves for this factor.
+
+```bash
+python mw_predictor.py --flow 1795 --pressure 162 --temp 541 \
+  --vacuum 0.156 --vacuum-unit kg/cm2_abs \
+  --crh-pressure 42.33 --hrh-pressure 40.16 --hrh-temp 534 --actual-mw 559
+```

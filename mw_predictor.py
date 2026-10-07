@@ -27,7 +27,7 @@ KGCM2_TO_BAR = 0.980665
 MMHG_TO_BAR = 1.01325 / 760.0
 
 PRESSURE_UNITS = ("kg/cm2g", "kg/cm2a", "barg", "bara", "MPa", "kPa")
-VACUUM_UNITS = ("mmHg", "kg/cm2", "kPa_abs", "bara", "mmHg_abs")
+VACUUM_UNITS = ("mmHg", "kg/cm2", "kPa_abs", "bara", "mmHg_abs", "kg/cm2_abs")
 
 
 def to_bar_abs(value, unit, baro_bar=STD_ATM_BAR):
@@ -51,7 +51,7 @@ def vacuum_to_bar_abs(value, unit, baro_bar=STD_ATM_BAR):
     """Convert a condenser vacuum reading to absolute exhaust pressure (bar).
 
     'mmHg' and 'kg/cm2' are vacuum (below atmosphere) readings; 'kPa_abs',
-    'bara' and 'mmHg_abs' are already absolute pressures.
+    'bara', 'mmHg_abs' and 'kg/cm2_abs' are already absolute pressures.
     """
     if unit == "mmHg":
         p = baro_bar - value * MMHG_TO_BAR
@@ -63,6 +63,8 @@ def vacuum_to_bar_abs(value, unit, baro_bar=STD_ATM_BAR):
         p = value
     elif unit == "mmHg_abs":
         p = value * MMHG_TO_BAR
+    elif unit == "kg/cm2_abs":
+        p = value * KGCM2_TO_BAR
     else:
         raise ValueError(f"Unknown vacuum unit {unit!r}; use one of {VACUUM_UNITS}")
     if p <= 0.006:
@@ -208,6 +210,152 @@ def calibrate_efficiency(actual_mw, flow_tph, p_ms_bara, t_ms_c, p_cond_bara,
     return eff
 
 
+@dataclass
+class ReheatResult:
+    flow_tph: float
+    p_ms_bara: float
+    t_ms_c: float
+    p_crh_bara: float
+    t_crh_c: float
+    p_hrh_bara: float
+    t_hrh_c: float
+    p_exhaust_bara: float
+    t_exhaust_c: float
+    h_ms: float
+    s_ms: float
+    h_crh_isentropic: float
+    h_crh: float
+    h_hrh: float
+    s_hrh: float
+    h_exhaust_isentropic: float
+    h_exhaust: float
+    x_exhaust: float
+    hp_eff: float
+    iplp_eff: float
+    rh_flow_frac: float
+    iplp_flow_factor: float
+    mech_eff: float
+    gen_eff: float
+    hp_mw: float            # HP section shaft work
+    iplp_mw: float          # IP + LP section shaft work
+    mw: float
+
+    def report(self):
+        rh_tph = self.flow_tph * self.rh_flow_frac
+        return "\n".join([
+            "=== MW Predictor (reheat) ===",
+            f"MS flow               : {self.flow_tph:10.2f} t/h",
+            f"MS                    : {self.p_ms_bara:10.3f} bar(a)  {self.t_ms_c:7.2f} °C",
+            f"CRH                   : {self.p_crh_bara:10.3f} bar(a)  {self.t_crh_c:7.2f} °C",
+            f"HRH                   : {self.p_hrh_bara:10.3f} bar(a)  {self.t_hrh_c:7.2f} °C",
+            f"Condenser             : {self.p_exhaust_bara * 100:10.3f} kPa(a)"
+            f"  (Tsat {self.t_exhaust_c:.2f} °C)",
+            "--- Steam states ---",
+            f"h MS                  : {self.h_ms:10.2f} kJ/kg   s {self.s_ms:.4f}",
+            f"h CRH isentropic      : {self.h_crh_isentropic:10.2f} kJ/kg",
+            f"h CRH actual          : {self.h_crh:10.2f} kJ/kg",
+            f"h HRH                 : {self.h_hrh:10.2f} kJ/kg   s {self.s_hrh:.4f}",
+            f"h exhaust isentropic  : {self.h_exhaust_isentropic:10.2f} kJ/kg",
+            f"h exhaust actual      : {self.h_exhaust:10.2f} kJ/kg",
+            f"Exhaust dryness       : {self.x_exhaust:10.4f}",
+            f"HP drop (actual)      : {self.h_ms - self.h_crh:10.2f} kJ/kg",
+            f"IP/LP drop (actual)   : {self.h_hrh - self.h_exhaust:10.2f} kJ/kg",
+            "--- Assumptions ---",
+            f"HP isentropic eff     : {self.hp_eff * 100:10.2f} %",
+            f"IP/LP isentropic eff  : {self.iplp_eff * 100:10.2f} %",
+            f"Reheat flow / MS flow : {self.rh_flow_frac * 100:10.2f} %  ({rh_tph:.1f} t/h)",
+            f"IP/LP flow factor     : {self.iplp_flow_factor * 100:10.2f} %"
+            "  (avg IP/LP flow / reheat flow, after extractions)",
+            f"Mechanical eff        : {self.mech_eff * 100:10.2f} %",
+            f"Generator eff         : {self.gen_eff * 100:10.2f} %",
+            "--- Result ---",
+            f"HP section            : {self.hp_mw:10.3f} MW (shaft)",
+            f"IP/LP section         : {self.iplp_mw:10.3f} MW (shaft)",
+            f"Predicted MW          : {self.mw:10.3f} MW",
+        ])
+
+
+def hp_eff_from_crh_temp(p_ms_bara, t_ms_c, p_crh_bara, t_crh_c):
+    """HP section isentropic efficiency from measured CRH temperature."""
+    ms = IAPWS97(P=p_ms_bara / 10.0, T=t_ms_c + 273.15)
+    crh_s = IAPWS97(P=p_crh_bara / 10.0, s=ms.s)
+    crh = IAPWS97(P=p_crh_bara / 10.0, T=t_crh_c + 273.15)
+    return (ms.h - crh.h) / (ms.h - crh_s.h)
+
+
+def predict_mw_reheat(flow_tph, p_ms_bara, t_ms_c, p_crh_bara, p_hrh_bara, t_hrh_c,
+                      p_cond_bara, hp_eff=0.85, iplp_eff=0.90, rh_flow_frac=0.90,
+                      iplp_flow_factor=0.85, mech_eff=0.99, gen_eff=0.985):
+    """Predict MW for a reheat turbine (HP -> reheater -> IP/LP -> condenser).
+
+    HP work uses the full MS flow. IP/LP work uses reheat flow
+    (MS flow x rh_flow_frac, i.e. after HP heater extractions) times
+    iplp_flow_factor, the average fraction of reheat flow that stays in the
+    IP/LP steam path after deaerator and LP heater extractions.
+    """
+    for name, v in (("hp_eff", hp_eff), ("iplp_eff", iplp_eff), ("rh_flow_frac", rh_flow_frac),
+                    ("iplp_flow_factor", iplp_flow_factor), ("mech_eff", mech_eff),
+                    ("gen_eff", gen_eff)):
+        _check_eff(name, v)
+    if flow_tph < 0:
+        raise ValueError("MS flow cannot be negative")
+    if not p_cond_bara < p_hrh_bara <= p_crh_bara < p_ms_bara:
+        raise ValueError("Pressures must satisfy condenser < HRH <= CRH < MS")
+
+    ms = IAPWS97(P=p_ms_bara / 10.0, T=t_ms_c + 273.15)
+    if ms.x < 1.0 or ms.phase == "Liquid":
+        raise ValueError(f"MS at {p_ms_bara:.2f} bar(a) / {t_ms_c:.1f} °C is not superheated")
+    crh_s = IAPWS97(P=p_crh_bara / 10.0, s=ms.s)
+    h_crh = ms.h - hp_eff * (ms.h - crh_s.h)
+    crh = IAPWS97(P=p_crh_bara / 10.0, h=h_crh)
+
+    hrh = IAPWS97(P=p_hrh_bara / 10.0, T=t_hrh_c + 273.15)
+    if h_crh >= hrh.h:
+        raise ValueError("HRH enthalpy must exceed CRH enthalpy; check HRH temperature")
+    p_c = p_cond_bara / 10.0
+    end_s = IAPWS97(P=p_c, s=hrh.s)
+    h_end = hrh.h - iplp_eff * (hrh.h - end_s.h)
+    end = IAPWS97(P=p_c, h=h_end)
+    sat_liq = IAPWS97(P=p_c, x=0)
+
+    m_ms = flow_tph * 1000.0 / 3600.0
+    m_rh = m_ms * rh_flow_frac
+    hp_mw = m_ms * (ms.h - h_crh) / 1000.0 * mech_eff
+    iplp_mw = m_rh * iplp_flow_factor * (hrh.h - h_end) / 1000.0 * mech_eff
+    mw = (hp_mw + iplp_mw) * gen_eff
+
+    return ReheatResult(
+        flow_tph=flow_tph, p_ms_bara=p_ms_bara, t_ms_c=t_ms_c,
+        p_crh_bara=p_crh_bara, t_crh_c=crh.T - 273.15,
+        p_hrh_bara=p_hrh_bara, t_hrh_c=t_hrh_c,
+        p_exhaust_bara=p_cond_bara, t_exhaust_c=sat_liq.T - 273.15,
+        h_ms=ms.h, s_ms=ms.s, h_crh_isentropic=crh_s.h, h_crh=h_crh,
+        h_hrh=hrh.h, s_hrh=hrh.s, h_exhaust_isentropic=end_s.h, h_exhaust=h_end,
+        x_exhaust=min(end.x, 1.0),
+        hp_eff=hp_eff, iplp_eff=iplp_eff, rh_flow_frac=rh_flow_frac,
+        iplp_flow_factor=iplp_flow_factor, mech_eff=mech_eff, gen_eff=gen_eff,
+        hp_mw=hp_mw, iplp_mw=iplp_mw, mw=mw,
+    )
+
+
+def calibrate_iplp_flow_factor(actual_mw, *args, **kwargs):
+    """Back-calculate the IP/LP flow factor that matches a measured MW.
+
+    Takes the same arguments as predict_mw_reheat (iplp_flow_factor is
+    ignored). MW is linear in the factor, so this is a direct solve.
+    """
+    kwargs["iplp_flow_factor"] = 1.0
+    ref = predict_mw_reheat(*args, **kwargs)
+    hp_gen_mw = ref.hp_mw * ref.gen_eff
+    factor = (actual_mw - hp_gen_mw) / (ref.iplp_mw * ref.gen_eff)
+    if not 0.0 < factor <= 1.0:
+        raise ValueError(
+            f"Calibrated IP/LP flow factor {factor:.3f} is outside (0, 1]; "
+            "check the inputs or the efficiency assumptions"
+        )
+    return factor
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Predict turbine MW from MS conditions and condenser vacuum")
     ap.add_argument("--flow", type=float, required=True, help="MS flow, t/h")
@@ -224,7 +372,23 @@ def main(argv=None):
     ap.add_argument("--actual-mw", type=float,
                     help="Measured MW: back-calculate the turbine efficiency that matches it")
     ap.add_argument("--sweep", action="store_true", help="Also print MW across a range of turbine efficiencies")
+    rh = ap.add_argument_group("reheat mode (enabled by --hrh-pressure; pressures use --pressure-unit)")
+    rh.add_argument("--crh-pressure", type=float, help="Cold reheat pressure")
+    rh.add_argument("--hrh-pressure", type=float, help="Hot reheat pressure")
+    rh.add_argument("--hrh-temp", type=float, help="Hot reheat temperature, °C")
+    rh.add_argument("--crh-temp", type=float,
+                    help="Measured CRH temperature, °C: sets HP efficiency from data instead of --hp-eff")
+    rh.add_argument("--hp-eff", type=float, default=85.0, help="HP isentropic efficiency, %% (default 85)")
+    rh.add_argument("--iplp-eff", type=float, default=90.0, help="IP/LP isentropic efficiency, %% (default 90)")
+    rh.add_argument("--rh-flow-frac", type=float, default=90.0,
+                    help="Reheat flow as %% of MS flow (default 90)")
+    rh.add_argument("--iplp-flow-factor", type=float, default=85.0,
+                    help="Average IP/LP flow as %% of reheat flow, after extractions (default 85); "
+                         "solved from --actual-mw if given")
     args = ap.parse_args(argv)
+
+    if args.hrh_pressure is not None:
+        return run_reheat(args)
 
     p_ms = to_bar_abs(args.pressure, args.pressure_unit, args.baro)
     p_c = vacuum_to_bar_abs(args.vacuum, args.vacuum_unit, args.baro)
@@ -243,6 +407,41 @@ def main(argv=None):
         for pct in range(70, 95, 2):
             r = predict_mw(args.flow, p_ms, args.temp, p_c, pct / 100.0, mech, gen)
             print(f"{pct:>14} {r.mw:>10.3f}")
+
+
+def run_reheat(args):
+    missing = [f for f in ("crh_pressure", "hrh_temp") if getattr(args, f) is None]
+    if missing:
+        raise SystemExit("Reheat mode also needs " + ", ".join("--" + m.replace("_", "-") for m in missing))
+
+    unit, baro = args.pressure_unit, args.baro
+    p_ms = to_bar_abs(args.pressure, unit, baro)
+    p_crh = to_bar_abs(args.crh_pressure, unit, baro)
+    p_hrh = to_bar_abs(args.hrh_pressure, unit, baro)
+    p_c = vacuum_to_bar_abs(args.vacuum, args.vacuum_unit, baro)
+
+    hp_eff = args.hp_eff / 100.0
+    if args.crh_temp is not None:
+        hp_eff = hp_eff_from_crh_temp(p_ms, args.temp, p_crh, args.crh_temp)
+        print(f"HP efficiency from measured CRH temperature: {hp_eff * 100:.2f} %\n")
+
+    kw = dict(hp_eff=hp_eff, iplp_eff=args.iplp_eff / 100.0, rh_flow_frac=args.rh_flow_frac / 100.0,
+              iplp_flow_factor=args.iplp_flow_factor / 100.0,
+              mech_eff=args.mech_eff / 100.0, gen_eff=args.gen_eff / 100.0)
+    pos = (args.flow, p_ms, args.temp, p_crh, p_hrh, args.hrh_temp, p_c)
+    if args.actual_mw is not None:
+        kw["iplp_flow_factor"] = calibrate_iplp_flow_factor(args.actual_mw, *pos, **kw)
+        print(f"Calibrated IP/LP flow factor from {args.actual_mw:.3f} MW: "
+              f"{kw['iplp_flow_factor'] * 100:.2f} %\n")
+
+    print(predict_mw_reheat(*pos, **kw).report())
+
+    if args.sweep:
+        print("\n--- IP/LP efficiency sweep ---")
+        print(f"{'IP/LP eff %':>12} {'MW':>10}")
+        for pct in range(80, 96, 2):
+            r = predict_mw_reheat(*pos, **{**kw, "iplp_eff": pct / 100.0})
+            print(f"{pct:>12} {r.mw:>10.3f}")
 
 
 if __name__ == "__main__":
