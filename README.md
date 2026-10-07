@@ -58,3 +58,11 @@ python mw_predictor.py --flow 1795 --pressure 162 --temp 541 \
   --vacuum 0.156 --vacuum-unit kg/cm2_abs \
   --crh-pressure 42.33 --hrh-pressure 40.16 --hrh-temp 534 --actual-mw 559
 ```
+
+### Web calculator (`web/mw_predictor.html`)
+
+A single-file browser version of the same model (reheat and non-reheat), with
+IAPWS-IF97 steam properties ported to JavaScript and checked against the
+`iapws` package. Open the file in any browser; no Python or internet needed
+apart from the web fonts. It shows the steam states, the MW split between
+sections, calibration to a measured MW and sensitivities.

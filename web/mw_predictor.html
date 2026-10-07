@@ -1,0 +1,544 @@
+<title>Turbine MW Predictor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: control-panel split. Inputs on the left as grouped instrument cards, the MW readout and steam states on the right. */
+:root {
+  --bg: #eef1f3;
+  --panel: #ffffff;
+  --ink: #16222c;
+  --muted: #5b6b78;
+  --line: #d3dbe1;
+  --accent: #0f6b80;
+  --accent-soft: #e0eef1;
+  --good: #1d7a46;
+  --warn: #a35a00;
+  --bad: #b3261e;
+  --field: #f7f9fa;
+  --display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f161c; --panel: #17212a; --ink: #e3eaef; --muted: #93a3b0; --line: #2a3742;
+    --accent: #5cc0d6; --accent-soft: #173a44; --good: #5cc98a; --warn: #f0a845; --bad: #f2867d;
+    --field: #111a21; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f161c; --panel: #17212a; --ink: #e3eaef; --muted: #93a3b0; --line: #2a3742;
+  --accent: #5cc0d6; --accent-soft: #173a44; --good: #5cc98a; --warn: #f0a845; --bad: #f2867d;
+  --field: #111a21; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--body); }
+.wrap { max-width: 1180px; margin: 0 auto; padding-inline: 16px; padding-block: 20px 40px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 24px; margin-bottom: 16px; }
+h1 { font: 600 30px/1.1 var(--display); letter-spacing: 0.01em; margin: 0; text-wrap: balance; }
+.sub { color: var(--muted); margin: 4px 0 0; max-width: 62ch; }
+.head-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 16px; align-items: start; }
+@media (max-width: 860px) { .grid { grid-template-columns: minmax(0, 1fr); } .results { order: -1; } }
+.col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px 16px; min-width: 0; }
+.card h2 { font: 600 12px/1.2 var(--body); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 12px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 12px; }
+label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--muted); min-width: 0; }
+label .unit { color: var(--muted); opacity: 0.8; }
+input, select { font: 500 14px var(--mono); color: var(--ink); background: var(--field); border: 1px solid var(--line); border-radius: 5px; padding: 7px 9px; width: 100%; min-width: 0; font-variant-numeric: tabular-nums; }
+select { font-family: var(--body); font-weight: 400; }
+input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+input:disabled { color: var(--muted); border-style: dashed; }
+.hint { font-size: 12px; color: var(--muted); margin: 10px 0 0; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; background: transparent; color: var(--muted); font: 500 12.5px var(--body); padding: 5px 10px; cursor: pointer; text-transform: none; letter-spacing: 0; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--panel); }
+.btn { font: 500 13px var(--body); border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--panel); }
+.readout { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 20px; }
+.mw { font: 600 64px/0.95 var(--display); letter-spacing: 0.01em; font-variant-numeric: tabular-nums; }
+.mw small { font-size: 26px; color: var(--muted); margin-left: 6px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.chip { text-transform: none; letter-spacing: 0; font: 500 12px var(--body); padding: 3px 8px; border-radius: 999px; border: 1px solid currentColor; font-variant-numeric: tabular-nums; }
+.chip.good { color: var(--good); } .chip.warn { color: var(--warn); } .chip.bad { color: var(--bad); } .chip.info { color: var(--accent); }
+.split { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; min-width: 200px; flex: 1; max-width: 360px; }
+.kv { border-left: 2px solid var(--line); padding-left: 10px; }
+.kv .k { font-size: 12px; color: var(--muted); }
+.kv .v { font: 500 18px var(--mono); font-variant-numeric: tabular-nums; }
+.error { color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, transparent); border: 1px solid color-mix(in srgb, var(--bad) 40%, transparent); border-radius: 6px; padding: 10px 12px; margin-top: 10px; }
+.calib { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; }
+.calib p { margin: 0; min-width: 0; flex: 1 1 260px; }
+.calib b { font-family: var(--mono); font-weight: 500; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font: 500 11.5px var(--body); color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+td { font: 400 13px var(--mono); }
+th:first-child, td:first-child { text-align: left; font-family: var(--body); }
+tr:last-child td { border-bottom: 0; }
+.sens { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 16px; }
+.sens .kv .v { font-size: 15px; }
+.assume { font-size: 12.5px; color: var(--muted); margin: 0; }
+.assume li { margin: 2px 0; }
+footer { color: var(--muted); font-size: 12px; margin-top: 18px; max-width: 80ch; }
+[data-mode="straight"] .rh-only { display: none !important; }
+[data-mode="reheat"] .st-only { display: none !important; }
+@media (prefers-reduced-motion: no-preference) { .mw { transition: color 0.2s; } }
+</style>
+
+<div class="wrap" id="app" data-mode="reheat">
+  <header>
+    <div>
+      <h1>Turbine MW Predictor</h1>
+      <p class="sub">Steam states from IAPWS-IF97 steam tables. Enter MS flow, pressure, temperature and condenser vacuum; adjust the efficiency assumptions or calibrate them to a measured load.</p>
+    </div>
+    <div class="head-actions">
+      <div class="seg" role="group" aria-label="Turbine type">
+        <button type="button" id="mode-reheat" aria-pressed="true">Reheat</button>
+        <button type="button" id="mode-straight" aria-pressed="false">Non-reheat</button>
+      </div>
+      <button type="button" class="btn" id="reset">Reset to example</button>
+    </div>
+  </header>
+
+  <div class="grid">
+    <form class="col" id="form" autocomplete="off">
+      <section class="card">
+        <h2>Main steam <span>
+          <select id="pUnit" aria-label="Pressure unit" style="width:auto">
+            <option value="kscg">kg/cm² (g)</option>
+            <option value="ksca">kg/cm² (a)</option>
+            <option value="barg">bar (g)</option>
+            <option value="bara">bar (a)</option>
+            <option value="mpa">MPa (a)</option>
+          </select></span></h2>
+        <div class="fields">
+          <label>MS flow <span class="unit">t/h</span><input id="flow" type="number" step="any" inputmode="decimal"></label>
+          <label>MS pressure <span class="unit pu">kg/cm² (g)</span><input id="pMs" type="number" step="any" inputmode="decimal"></label>
+          <label>MS temperature <span class="unit">°C</span><input id="tMs" type="number" step="any" inputmode="decimal"></label>
+        </div>
+      </section>
+
+      <section class="card rh-only">
+        <h2>Reheat</h2>
+        <div class="fields">
+          <label>CRH pressure <span class="unit pu">kg/cm² (g)</span><input id="pCrh" type="number" step="any" inputmode="decimal"></label>
+          <label>HRH pressure <span class="unit pu">kg/cm² (g)</span><input id="pHrh" type="number" step="any" inputmode="decimal"></label>
+          <label>HRH temperature <span class="unit">°C</span><input id="tHrh" type="number" step="any" inputmode="decimal"></label>
+          <label>CRH temperature <span class="unit">°C · optional</span><input id="tCrh" type="number" step="any" inputmode="decimal" placeholder="sets HP eff"></label>
+        </div>
+        <p class="hint">A measured CRH temperature fixes the HP efficiency from data instead of the assumption below.</p>
+      </section>
+
+      <section class="card">
+        <h2>Condenser</h2>
+        <div class="fields">
+          <label>Vacuum reading <span class="unit">&nbsp;</span><input id="vac" type="number" step="any" inputmode="decimal"></label>
+          <label>Reading type <span class="unit">&nbsp;</span>
+            <select id="vUnit">
+              <option value="ksca">kg/cm² (abs)</option>
+              <option value="mmhgv">mmHg vacuum</option>
+              <option value="kscv">kg/cm² vacuum</option>
+              <option value="kpaa">kPa (abs)</option>
+              <option value="mmhga">mmHg (abs)</option>
+            </select></label>
+          <label>Barometric <span class="unit">bar</span><input id="baro" type="number" step="any" inputmode="decimal"></label>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Efficiency assumptions</h2>
+        <div class="fields">
+          <label class="st-only">Turbine isentropic <span class="unit">%</span><input id="turbEff" type="number" step="any" inputmode="decimal"></label>
+          <label class="rh-only">HP isentropic <span class="unit">%</span><input id="hpEff" type="number" step="any" inputmode="decimal"></label>
+          <label class="rh-only">IP/LP isentropic <span class="unit">%</span><input id="iplpEff" type="number" step="any" inputmode="decimal"></label>
+          <label class="rh-only">Reheat flow / MS flow <span class="unit">%</span><input id="rhFrac" type="number" step="any" inputmode="decimal"></label>
+          <label class="rh-only">IP/LP flow factor <span class="unit">%</span><input id="flowFactor" type="number" step="any" inputmode="decimal"></label>
+          <label>Mechanical <span class="unit">%</span><input id="mechEff" type="number" step="any" inputmode="decimal"></label>
+          <label>Generator <span class="unit">%</span><input id="genEff" type="number" step="any" inputmode="decimal"></label>
+        </div>
+        <p class="hint rh-only">Reheat flow fraction covers HP heater extractions. IP/LP flow factor is the average share of reheat flow left in the IP/LP path after deaerator and LP heater extractions.</p>
+      </section>
+
+      <section class="card">
+        <h2>Calibrate to a measured load</h2>
+        <div class="fields">
+          <label>Actual MW <span class="unit">optional</span><input id="actual" type="number" step="any" inputmode="decimal"></label>
+          <label>Adjust <span class="unit">&nbsp;</span>
+            <select id="calKey">
+              <option value="flowFactor" class="rh-only">IP/LP flow factor</option>
+              <option value="iplpEff" class="rh-only">IP/LP efficiency</option>
+              <option value="turbEff" class="st-only">Turbine efficiency</option>
+            </select></label>
+        </div>
+      </section>
+    </form>
+
+    <div class="col results" aria-live="polite">
+      <section class="card">
+        <h2>Predicted generator output <span id="example-tag" class="chip info">Example: your 559 MW reading</span></h2>
+        <div class="readout">
+          <div>
+            <div class="mw" id="mw">–<small>MW</small></div>
+            <div class="chips" id="chips"></div>
+          </div>
+          <div class="split" id="split"></div>
+        </div>
+        <div class="error" id="error" hidden></div>
+        <div class="calib" id="calib" hidden>
+          <p id="calib-text"></p>
+          <button type="button" class="btn primary" id="apply">Use this value</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Steam states</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Point</th><th>P bar(a)</th><th>T °C</th><th>h kJ/kg</th><th>s kJ/kg·K</th><th>Dryness</th></tr></thead>
+            <tbody id="states"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Sensitivity at this point</h2>
+        <div class="sens" id="sens"></div>
+      </section>
+
+      <section class="card">
+        <h2>Model</h2>
+        <ul class="assume rh-only">
+          <li>HP: MS expands to CRH pressure at HP efficiency with full MS flow.</li>
+          <li>IP/LP: HRH expands to condenser pressure at IP/LP efficiency with MS flow × reheat fraction × IP/LP flow factor.</li>
+          <li>MW = (HP + IP/LP work) × mechanical × generator efficiency.</li>
+        </ul>
+        <ul class="assume st-only">
+          <li>MS expands straight to condenser pressure at turbine efficiency with full MS flow.</li>
+          <li>MW = flow × enthalpy drop × mechanical × generator efficiency.</li>
+          <li>Feed-heating extractions are not modelled; calibrate to a measured MW to absorb them.</li>
+        </ul>
+      </section>
+    </div>
+  </div>
+  <footer>Gauge pressures use the barometric value entered. Steam properties: IAPWS-IF97 regions 1, 2 and 4; states in the near-critical region (above 165 bar near saturation) are not covered. Your inputs are remembered in this browser only.</footer>
+</div>
+
+<script>
+// IAPWS-IF97 regions 1, 2 and 4 (P in MPa, T in K, h kJ/kg, s kJ/kg.K)
+const R = 0.461526;
+const R1 = {I:[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1.0,1.0,1.0,1.0,1.0,1.0,2.0,2.0,2.0,2.0,2.0,3.0,3.0,3.0,4.0,4.0,4.0,5.0,8.0,8.0,21.0,23.0,29.0,30.0,31.0,32.0],J:[-2.0,-1.0,0.0,1.0,2.0,3.0,4.0,5.0,-9.0,-7.0,-1.0,0.0,1.0,3.0,-3.0,0.0,1.0,3.0,17.0,-4.0,0.0,6.0,-5.0,-2.0,10.0,-8.0,-11.0,-6.0,-29.0,-31.0,-38.0,-39.0,-40.0,-41.0],n:[0.14632971213167,-0.84548187169114,-3.756360367204,3.3855169168385,-0.95791963387872,0.15772038513228,-0.016616417199501,0.00081214629983568,0.00028319080123804,-0.00060706301565874,-0.018990068218419,-0.032529748770505,-0.021841717175414,-5.283835796993e-05,-0.00047184321073267,-0.00030001780793026,4.7661393906987e-05,-4.4141845330846e-06,-7.2694996297594e-16,-3.1679644845054e-05,-2.8270797985312e-06,-8.5205128120103e-10,-2.2425281908e-06,-6.5171222895601e-07,-1.4341729937924e-13,-4.0516996860117e-07,-1.2734301741641e-09,-1.7424871230634e-10,-6.8762131295531e-19,1.4478307828521e-20,2.6335781662795e-23,-1.1947622640071e-23,1.8228094581404e-24,-9.3537087292458e-26]};
+const R2o = {J:[0.0,1.0,-5.0,-4.0,-3.0,-2.0,-1.0,2.0,3.0],n:[-9.6927686500217,10.086655968018,-0.005608791128302,0.071452738081455,-0.40710498223928,1.4240819171444,-4.383951131945,-0.28408632460772,0.021268463753307]};
+const R2r = {I:[1.0,1.0,1.0,1.0,1.0,2.0,2.0,2.0,2.0,2.0,3.0,3.0,3.0,3.0,3.0,4.0,4.0,4.0,5.0,6.0,6.0,6.0,7.0,7.0,7.0,8.0,8.0,9.0,10.0,10.0,10.0,16.0,16.0,18.0,20.0,20.0,20.0,21.0,22.0,23.0,24.0,24.0,24.0],J:[0.0,1.0,2.0,3.0,6.0,1.0,2.0,4.0,7.0,36.0,0.0,1.0,3.0,6.0,35.0,1.0,2.0,3.0,7.0,3.0,16.0,35.0,0.0,11.0,25.0,8.0,36.0,13.0,4.0,10.0,14.0,29.0,50.0,57.0,20.0,35.0,48.0,21.0,53.0,39.0,26.0,40.0,58.0],n:[-0.0017731742473213,-0.017834862292358,-0.045996013696365,-0.057581259083432,-0.05032527872793,-3.3032641670203e-05,-0.00018948987516315,-0.0039392777243355,-0.043797295650573,-2.6674547914087e-05,2.0481737692309e-08,4.3870667284435e-07,-3.227767723857e-05,-0.0015033924542148,-0.040668253562649,-7.8847309559367e-10,1.2790717852285e-08,4.8225372718507e-07,2.2922076337661e-06,-1.6714766451061e-11,-0.0021171472321355,-23.895741934104,-5.905956432427e-18,-1.2621808899101e-06,-0.038946842435739,1.1256211360459e-11,-8.2311340897998,1.9809712802088e-08,1.0406965210174e-19,-1.0234747095929e-13,-1.0018179379511e-09,-8.0882908646985e-11,0.10693031879409,-0.33662250574171,8.9185845355421e-25,3.0629316876232e-13,-4.2002467698208e-06,-5.9056029685639e-26,3.7826947613457e-06,-1.2768608934681e-15,7.3087610595061e-29,5.5414715350778e-17,-9.436970724121e-07]};
+
+function region1(T, P) {
+  const tau = 1386 / T, pi = P / 16.53;
+  let g = 0, gt = 0;
+  for (let i = 0; i < 34; i++) {
+    const a = Math.pow(7.1 - pi, R1.I[i]), b = tau - 1.222;
+    g += R1.n[i] * a * Math.pow(b, R1.J[i]);
+    gt += R1.n[i] * a * R1.J[i] * Math.pow(b, R1.J[i] - 1);
+  }
+  return { h: tau * gt * R * T, s: R * (tau * gt - g) };
+}
+
+function region2(T, P) {
+  const tau = 540 / T, pi = P;
+  let go = Math.log(pi), got = 0, gr = 0, grt = 0;
+  for (let i = 0; i < 9; i++) {
+    go += R2o.n[i] * Math.pow(tau, R2o.J[i]);
+    got += R2o.n[i] * R2o.J[i] * Math.pow(tau, R2o.J[i] - 1);
+  }
+  for (let i = 0; i < 43; i++) {
+    const a = Math.pow(pi, R2r.I[i]), b = tau - 0.5;
+    gr += R2r.n[i] * a * Math.pow(b, R2r.J[i]);
+    grt += R2r.n[i] * a * R2r.J[i] * Math.pow(b, R2r.J[i] - 1);
+  }
+  return { h: tau * (got + grt) * R * T, s: R * (tau * (got + grt) - (go + gr)) };
+}
+
+const N4 = [0, 0.11670521452767e4, -0.72421316703206e6, -0.17073846940092e2, 0.12020824702470e5,
+  -0.32325550322333e7, 0.14915108613530e2, -0.48232657361591e4, 0.40511340542057e6,
+  -0.23855557567849, 0.65017534844798e3];
+
+function tsat(P) {
+  const b = Math.pow(P, 0.25), n = N4;
+  const E = b * b + n[3] * b + n[6], F = n[1] * b * b + n[4] * b + n[7], G = n[2] * b * b + n[5] * b + n[8];
+  const D = 2 * G / (-F - Math.sqrt(F * F - 4 * E * G));
+  return (n[10] + D - Math.sqrt((n[10] + D) ** 2 - 4 * (n[9] + n[10] * D))) / 2;
+}
+
+function tB23(P) { return 0.57254459862746e3 + Math.sqrt((P - 0.1391883977870e2) / 0.10192970039326e-2); }
+
+function sat(P) {
+  if (!(P >= 0.000611657 && P < 16.529)) throw new Error("Saturation pressure out of range");
+  const T = tsat(P), f = region1(T, P), g = region2(T, P);
+  return { T, hf: f.h, sf: f.s, hg: g.h, sg: g.s };
+}
+
+// Superheated steam at (P, T)
+function steamPT(P, T) {
+  if (P <= 0 || P > 100) throw new Error("Pressure must be between 0 and 1000 bar(a)");
+  if (T > 1073.15) throw new Error("Temperature above 800 °C is outside IF97 region 2");
+  if (P < 16.529) {
+    const Ts = tsat(P);
+    if (T <= Ts) throw new Error(`Steam at ${(P * 10).toFixed(2)} bar(a) must be above ${(Ts - 273.15).toFixed(1)} °C (saturation) to be superheated`);
+  } else if (T <= tB23(P)) {
+    throw new Error(`Steam at ${(P * 10).toFixed(1)} bar(a) and ${(T - 273.15).toFixed(1)} °C is in the near-critical region, which this calculator does not cover; it needs at least ${(tB23(P) - 273.15).toFixed(1)} °C`);
+  }
+  return { ...region2(T, P), T, x: 1 };
+}
+
+function solveT(P, key, target, Tlo) {
+  let lo = Tlo, hi = 1073.15;
+  if (region2(hi, P)[key] < target) throw new Error("State is beyond 800 °C");
+  for (let i = 0; i < 100; i++) {
+    const mid = (lo + hi) / 2;
+    if (region2(mid, P)[key] < target) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+// State at pressure P with given entropy or enthalpy (wet or superheated)
+function stateP(P, key, value) {
+  if (P >= 16.529) {
+    const Tlo = tB23(P);
+    if (region2(Tlo, P)[key] > value) throw new Error("Expansion ends in the near-critical region, which this calculator does not cover");
+    const T = solveT(P, key, value, Tlo);
+    return { ...region2(T, P), T, x: 1 };
+  }
+  const sa = sat(P), g = key === "s" ? sa.sg : sa.hg, f = key === "s" ? sa.sf : sa.hf;
+  if (value >= g) {
+    const T = solveT(P, key, value, sa.T);
+    return { ...region2(T, P), T, x: 1 };
+  }
+  const x = (value - f) / (g - f);
+  if (x < 0) throw new Error("State falls in the liquid region");
+  return { h: sa.hf + x * (sa.hg - sa.hf), s: sa.sf + x * (sa.sg - sa.sf), T: sa.T, x };
+}
+const statePs = (P, s) => stateP(P, "s", s);
+const statePh = (P, h) => stateP(P, "h", h);
+
+// ---- Turbine models (pressures bar(a), temperatures °C, flow t/h, efficiencies as fractions) ----
+function checkFrac(name, v) { if (!(v > 0 && v <= 1)) throw new Error(`${name} must be between 0 and 100 %`); }
+
+function straight(i) {
+  ["Turbine efficiency", "Mechanical efficiency", "Generator efficiency"].forEach((n, k) =>
+    checkFrac(n, [i.turbEff, i.mechEff, i.genEff][k]));
+  if (!(i.pCond < i.pMs)) throw new Error("Condenser pressure must be below MS pressure");
+  const ms = steamPT(i.pMs / 10, i.tMs + 273.15);
+  const pc = i.pCond / 10, end_s = statePs(pc, ms.s);
+  const h2 = ms.h - i.turbEff * (ms.h - end_s.h), end = statePh(pc, h2), sa = sat(pc);
+  const m = i.flow / 3.6;
+  const shaft = m * (ms.h - h2) / 1000 * i.mechEff;
+  return { mode: "straight", ms, endIs: end_s, end, tCond: sa.T - 273.15,
+    drops: { isen: ms.h - end_s.h, actual: ms.h - h2 }, sections: [{ name: "Turbine", mw: shaft }],
+    mw: shaft * i.genEff };
+}
+
+function reheat(i) {
+  [["HP efficiency", i.hpEff], ["IP/LP efficiency", i.iplpEff], ["Reheat flow fraction", i.rhFrac],
+   ["IP/LP flow factor", i.flowFactor], ["Mechanical efficiency", i.mechEff], ["Generator efficiency", i.genEff]]
+    .forEach(([n, v]) => checkFrac(n, v));
+  if (!(i.pCond < i.pHrh && i.pHrh <= i.pCrh && i.pCrh < i.pMs))
+    throw new Error("Pressures must run condenser < HRH ≤ CRH < MS");
+  const ms = steamPT(i.pMs / 10, i.tMs + 273.15);
+  const crhIs = statePs(i.pCrh / 10, ms.s);
+  const hCrh = ms.h - i.hpEff * (ms.h - crhIs.h), crh = statePh(i.pCrh / 10, hCrh);
+  const hrh = steamPT(i.pHrh / 10, i.tHrh + 273.15);
+  if (hrh.h <= hCrh) throw new Error("HRH temperature is too low: reheat must add heat");
+  const pc = i.pCond / 10, endIs = statePs(pc, hrh.s);
+  const hEnd = hrh.h - i.iplpEff * (hrh.h - endIs.h), end = statePh(pc, hEnd), sa = sat(pc);
+  const m = i.flow / 3.6;
+  const hp = m * (ms.h - hCrh) / 1000 * i.mechEff;
+  const iplp = m * i.rhFrac * i.flowFactor * (hrh.h - hEnd) / 1000 * i.mechEff;
+  return { mode: "reheat", ms, crhIs, crh, hrh, endIs, end, tCond: sa.T - 273.15,
+    drops: { hp: ms.h - hCrh, iplp: hrh.h - hEnd },
+    sections: [{ name: "HP", mw: hp }, { name: "IP/LP", mw: iplp }], mw: (hp + iplp) * i.genEff };
+}
+
+// HP efficiency from a measured CRH temperature
+function hpEffFromCrh(i, tCrh) {
+  const ms = steamPT(i.pMs / 10, i.tMs + 273.15), crhIs = statePs(i.pCrh / 10, ms.s);
+  const crh = steamPT(i.pCrh / 10, tCrh + 273.15);
+  return (ms.h - crh.h) / (ms.h - crhIs.h);
+}
+
+// MW is linear in the calibrated parameter: solve from two evaluations
+function calibrate(fn, i, key, actual) {
+  const a = fn({ ...i, [key]: 0.5 }).mw, b = fn({ ...i, [key]: 1 }).mw;
+  return 0.5 + (actual - a) * 0.5 / (b - a);
+}
+
+</script>
+<script>
+(function () {
+  const KSC = 0.980665, MMHG = 1.01325 / 760;
+  const EXAMPLE = {
+    mode: "reheat", pUnit: "kscg", flow: 1795, pMs: 162, tMs: 541, pCrh: 42.33, pHrh: 40.16, tHrh: 534, tCrh: 343,
+    vac: 0.135, vUnit: "ksca", baro: 1.01325, turbEff: 85, hpEff: 85, iplpEff: 90, rhFrac: 90, flowFactor: 85,
+    mechEff: 99, genEff: 98.5, actual: 559, calKey: "flowFactor"
+  };
+  const NUM = ["flow", "pMs", "tMs", "pCrh", "pHrh", "tHrh", "tCrh", "vac", "baro", "turbEff", "hpEff", "iplpEff", "rhFrac", "flowFactor", "mechEff", "genEff", "actual"];
+  const SEL = ["pUnit", "vUnit", "calKey"];
+  const $ = id => document.getElementById(id);
+  const app = $("app");
+  let mode = "reheat", lastCal = null;
+
+  const UNIT_LABEL = { kscg: "kg/cm² (g)", ksca: "kg/cm² (a)", barg: "bar (g)", bara: "bar (a)", mpa: "MPa (a)" };
+  function toBara(v, u, baro) {
+    return { kscg: v * KSC + baro, ksca: v * KSC, barg: v + baro, bara: v, mpa: v * 10 }[u];
+  }
+  function condBara(v, u, baro) {
+    const p = { ksca: v * KSC, mmhgv: baro - v * MMHG, kscv: baro - v * KSC, kpaa: v / 100, mmhga: v * MMHG }[u];
+    if (!(p > 0.00612)) throw new Error("Condenser pressure is at or below zero absolute. Check the vacuum reading and its type.");
+    return p;
+  }
+
+  function load(state) {
+    NUM.forEach(k => { $(k).value = state[k] ?? ""; });
+    SEL.forEach(k => { if (state[k]) $(k).value = state[k]; });
+    setMode(state.mode || "reheat", false);
+  }
+  function snapshot() {
+    const s = { mode };
+    NUM.forEach(k => s[k] = $(k).value === "" ? "" : Number($(k).value));
+    SEL.forEach(k => s[k] = $(k).value);
+    return s;
+  }
+  function save() { try { localStorage.setItem("mw-predictor", JSON.stringify(snapshot())); } catch (e) {} }
+  function restore() { try { return JSON.parse(localStorage.getItem("mw-predictor")); } catch (e) { return null; } }
+
+  function setMode(m, run = true) {
+    mode = m; app.dataset.mode = m;
+    $("mode-reheat").setAttribute("aria-pressed", m === "reheat");
+    $("mode-straight").setAttribute("aria-pressed", m === "straight");
+    const cal = $("calKey");
+    const valid = m === "reheat" ? ["flowFactor", "iplpEff"] : ["turbEff"];
+    if (!valid.includes(cal.value)) cal.value = valid[0];
+    [...cal.options].forEach(o => { o.disabled = !valid.includes(o.value); o.hidden = !valid.includes(o.value); });
+    if (run) update();
+  }
+
+  const num = id => { const v = $(id).value; return v === "" ? NaN : Number(v); };
+  const f = (v, d) => Number.isFinite(v) ? v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }) : "–";
+
+  function inputs() {
+    const baro = num("baro"), u = $("pUnit").value;
+    const need = mode === "reheat" ? ["flow", "pMs", "tMs", "pCrh", "pHrh", "tHrh", "vac", "baro"] : ["flow", "pMs", "tMs", "vac", "baro"];
+    const missing = need.filter(k => !Number.isFinite(num(k)));
+    if (missing.length) throw new Error("Fill in: " + missing.map(k => $(k).closest("label").firstChild.textContent.trim()).join(", "));
+    if (!(num("flow") >= 0)) throw new Error("MS flow cannot be negative");
+    const i = {
+      flow: num("flow"), pMs: toBara(num("pMs"), u, baro), tMs: num("tMs"),
+      pCrh: toBara(num("pCrh"), u, baro), pHrh: toBara(num("pHrh"), u, baro), tHrh: num("tHrh"),
+      pCond: condBara(num("vac"), $("vUnit").value, baro),
+      turbEff: num("turbEff") / 100, hpEff: num("hpEff") / 100, iplpEff: num("iplpEff") / 100,
+      rhFrac: num("rhFrac") / 100, flowFactor: num("flowFactor") / 100, mechEff: num("mechEff") / 100, genEff: num("genEff") / 100
+    };
+    let hpFromCrh = null;
+    if (mode === "reheat" && Number.isFinite(num("tCrh"))) {
+      hpFromCrh = hpEffFromCrh(i, num("tCrh"));
+      if (!(hpFromCrh > 0 && hpFromCrh <= 1)) throw new Error(`CRH temperature ${num("tCrh")} °C gives an HP efficiency of ${f(hpFromCrh * 100, 1)} %, which is impossible. Check the CRH reading.`);
+      i.hpEff = hpFromCrh;
+    }
+    return { i, hpFromCrh };
+  }
+
+  function row(name, p, st) {
+    return `<tr><td>${name}</td><td>${f(p, 3)}</td><td>${f(st.T - 273.15, 1)}</td><td>${f(st.h, 1)}</td><td>${f(st.s, 4)}</td><td>${st.x >= 1 ? "superheated" : f(st.x, 4)}</td></tr>`;
+  }
+
+  function update() {
+    save();
+    const err = $("error");
+    err.hidden = true; $("calib").hidden = true; lastCal = null;
+    const cur = snapshot(), ignore = Number.isFinite(num("tCrh")) ? ["hpEff"] : [];
+    const isExample = Object.keys(EXAMPLE).every(k => ignore.includes(k) || cur[k] === EXAMPLE[k]);
+    $("example-tag").hidden = !isExample;
+    let ctx, r;
+    try {
+      ctx = inputs();
+      const model = mode === "reheat" ? reheat : straight;
+      r = model(ctx.i);
+      $("hpEff").disabled = ctx.hpFromCrh !== null;
+      if (ctx.hpFromCrh !== null) $("hpEff").value = (ctx.hpFromCrh * 100).toFixed(2);
+
+      $("mw").innerHTML = `${f(r.mw, 1)}<small>MW</small>`;
+      const chips = [];
+      const actual = num("actual");
+      if (Number.isFinite(actual)) {
+        const d = r.mw - actual, pct = d / actual * 100;
+        const cls = Math.abs(pct) < 1 ? "good" : Math.abs(pct) < 3 ? "warn" : "bad";
+        chips.push(`<span class="chip ${cls}">${d >= 0 ? "+" : "−"}${f(Math.abs(d), 1)} MW vs actual ${f(actual, 1)} (${pct >= 0 ? "+" : "−"}${f(Math.abs(pct), 1)} %)</span>`);
+        const key = $("calKey").value;
+        const v = calibrate(model, ctx.i, key, actual);
+        const label = $("calKey").selectedOptions[0].textContent;
+        if (v > 0 && v <= 1) {
+          lastCal = { key, v };
+          $("calib-text").innerHTML = `${label} that matches ${f(actual, 1)} MW: <b>${f(v * 100, 2)} %</b> (now ${f(ctx.i[key] * 100, 2)} %)`;
+          $("apply").hidden = Math.abs(v - ctx.i[key]) < 5e-5;
+        } else {
+          $("calib-text").innerHTML = `No ${label.toLowerCase()} between 0 and 100 % matches ${f(actual, 1)} MW. Check the readings or the other assumptions.`;
+          $("apply").hidden = true;
+        }
+        $("calib").hidden = false;
+      }
+      if (ctx.hpFromCrh !== null) chips.push(`<span class="chip info">HP eff ${f(ctx.hpFromCrh * 100, 1)} % from CRH temperature</span>`);
+      chips.push(`<span class="chip info">Exhaust dryness ${f(r.end.x, 3)}</span>`);
+      $("chips").innerHTML = chips.join("");
+
+      const kv = (k, v) => `<div class="kv"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+      $("split").innerHTML = r.sections.map(s => kv(`${s.name} shaft`, `${f(s.mw, 1)} MW`)).join("") +
+        (mode === "reheat" ? kv("HP drop", `${f(r.drops.hp, 1)} kJ/kg`) + kv("IP/LP drop", `${f(r.drops.iplp, 1)} kJ/kg`)
+                           : kv("Isentropic drop", `${f(r.drops.isen, 1)} kJ/kg`) + kv("Actual drop", `${f(r.drops.actual, 1)} kJ/kg`));
+
+      const i = ctx.i;
+      $("states").innerHTML = mode === "reheat"
+        ? row("Main steam", i.pMs, r.ms) + row("CRH, isentropic", i.pCrh, r.crhIs) + row("CRH", i.pCrh, r.crh) +
+          row("HRH", i.pHrh, r.hrh) + row("Exhaust, isentropic", i.pCond, r.endIs) + row("Exhaust", i.pCond, r.end)
+        : row("Main steam", i.pMs, r.ms) + row("Exhaust, isentropic", i.pCond, r.endIs) + row("Exhaust", i.pCond, r.end);
+
+      // Sensitivities by small perturbation
+      const d = (patch) => { try { return model({ ...i, ...patch }).mw - r.mw; } catch (e) { return NaN; } };
+      const s = [];
+      const main = mode === "reheat" ? "iplpEff" : "turbEff";
+      s.push(kv(`+1 pt ${mode === "reheat" ? "IP/LP" : "turbine"} efficiency`, `${f(d({ [main]: i[main] + 0.01 }), 2)} MW`));
+      if (mode === "reheat") s.push(kv("+1 pt HP efficiency", `${f(d({ hpEff: i.hpEff + 0.01 }), 2)} MW`));
+      s.push(kv("Condenser +0.01 kg/cm²", `${f(d({ pCond: i.pCond + 0.01 * KSC }), 2)} MW`));
+      s.push(kv("MS flow +10 t/h", `${f(d({ flow: i.flow + 10 }), 2)} MW`));
+      s.push(kv("MS temperature +5 °C", `${f(d({ tMs: i.tMs + 5 }), 2)} MW`));
+      if (mode === "reheat") s.push(kv("HRH temperature +5 °C", `${f(d({ tHrh: i.tHrh + 5 }), 2)} MW`));
+      $("sens").innerHTML = s.join("");
+    } catch (e) {
+      $("mw").innerHTML = `–<small>MW</small>`;
+      $("chips").innerHTML = ""; $("split").innerHTML = ""; $("states").innerHTML = ""; $("sens").innerHTML = "";
+      err.textContent = e.message; err.hidden = false;
+      $("hpEff").disabled = mode === "reheat" && Number.isFinite(num("tCrh"));
+    }
+  }
+
+  document.querySelectorAll(".pu").forEach(el => el.textContent = UNIT_LABEL.kscg);
+  $("pUnit").addEventListener("change", () => {
+    document.querySelectorAll(".pu").forEach(el => el.textContent = UNIT_LABEL[$("pUnit").value]);
+  });
+  $("form").addEventListener("input", update);
+  $("form").addEventListener("submit", e => e.preventDefault());
+  $("mode-reheat").addEventListener("click", () => setMode("reheat"));
+  $("mode-straight").addEventListener("click", () => setMode("straight"));
+  $("reset").addEventListener("click", () => { load(EXAMPLE); update(); });
+  $("apply").addEventListener("click", () => {
+    if (!lastCal) return;
+    $(lastCal.key).value = (lastCal.v * 100).toFixed(2);
+    update();
+  });
+
+  const saved = restore();
+  load(saved && typeof saved === "object" ? { ...EXAMPLE, ...saved } : EXAMPLE);
+  $("pUnit").dispatchEvent(new Event("change"));
+  update();
+})();
+</script>
