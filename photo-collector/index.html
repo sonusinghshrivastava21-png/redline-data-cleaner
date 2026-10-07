@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1f6feb">
+  <title>Photo Collector</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📷</text></svg>">
+  <style>
+    :root {
+      --bg: #f6f7f9; --card: #fff; --text: #1b1f24; --muted: #66707a;
+      --line: #dfe3e8; --accent: #1f6feb; --accent-soft: #e3edff; --danger: #d1242f;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f1215; --card: #1a1f24; --text: #e8ecf0; --muted: #9aa4ae;
+        --line: #2c333a; --accent: #4c8dff; --accent-soft: #1d2b44; --danger: #ff6b6b;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    header {
+      position: sticky; top: 0; z-index: 5; background: var(--card);
+      border-bottom: 1px solid var(--line); padding: 10px 16px 0;
+    }
+    h1 { font-size: 18px; margin: 0 0 8px; }
+    .tabs { display: flex; gap: 4px; }
+    .tab {
+      flex: 1; padding: 10px; border: 0; background: none; color: var(--muted);
+      font: inherit; font-weight: 600; border-bottom: 3px solid transparent;
+    }
+    .tab.active { color: var(--accent); border-color: var(--accent); }
+    main { padding: 12px 16px 96px; max-width: 960px; margin: 0 auto; }
+    button { font: inherit; cursor: pointer; }
+    .btn {
+      border: 1px solid var(--line); background: var(--card); color: var(--text);
+      padding: 9px 14px; border-radius: 10px; font-weight: 600;
+    }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn.danger { color: var(--danger); }
+    .btn:disabled { opacity: .45; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .card {
+      background: var(--card); border: 1px solid var(--line);
+      border-radius: 14px; padding: 12px; margin-bottom: 12px;
+    }
+    .label { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 0 0 6px; }
+    .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+    .chip {
+      border: 1px solid var(--line); background: var(--card); color: var(--text);
+      border-radius: 999px; padding: 5px 12px; font-size: 14px;
+    }
+    .chip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+    .chip .x { margin-left: 6px; opacity: .6; }
+    input[type=date], input[type=datetime-local], input[type=text], select {
+      font: inherit; padding: 8px 10px; border-radius: 10px; color: var(--text);
+      border: 1px solid var(--line); background: var(--bg); min-width: 0;
+    }
+    .dates { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .dates label { display: flex; flex-direction: column; font-size: 13px; color: var(--muted); gap: 4px; }
+    .muted { color: var(--muted); font-size: 13px; }
+    .day-head { font-weight: 700; margin: 16px 0 8px; display: flex; justify-content: space-between; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 4px; }
+    .thumb {
+      position: relative; aspect-ratio: 1; border: 0; padding: 0; overflow: hidden;
+      border-radius: 6px; background: var(--line);
+    }
+    .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .thumb .tag {
+      position: absolute; left: 4px; bottom: 4px; right: 4px; text-align: left;
+      font-size: 11px; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.8);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .thumb .check {
+      position: absolute; top: 5px; right: 5px; width: 22px; height: 22px; border-radius: 50%;
+      border: 2px solid #fff; background: rgba(0,0,0,.25); display: none;
+    }
+    .selecting .thumb .check { display: block; }
+    .thumb.sel .check { background: var(--accent); }
+    .thumb.sel .check::after { content: "✓"; color: #fff; font-size: 13px; position: absolute; inset: 0; display: grid; place-items: center; }
+    .thumb.sel img { opacity: .75; }
+    .bar {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; background: var(--card);
+      border-top: 1px solid var(--line); padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+      display: flex; gap: 8px; align-items: center; justify-content: space-between;
+    }
+    .empty { text-align: center; padding: 48px 16px; color: var(--muted); }
+    .empty .big { font-size: 44px; }
+    .coll { display: flex; gap: 12px; align-items: center; width: 100%; text-align: left; color: var(--text); }
+    .coll img, .coll .ph { width: 64px; height: 64px; border-radius: 10px; object-fit: cover; background: var(--line); flex: none; }
+    .coll h3 { margin: 0 0 2px; font-size: 16px; }
+    dialog {
+      border: 0; border-radius: 16px; padding: 0; width: min(560px, calc(100vw - 24px));
+      background: var(--card); color: var(--text); max-height: calc(100vh - 24px);
+    }
+    dialog::backdrop { background: rgba(0,0,0,.6); }
+    .dlg-body { padding: 16px; }
+    .viewer img { width: 100%; max-height: 60vh; object-fit: contain; background: #000; display: block; }
+    .hidden { display: none !important; }
+    .spacer { flex: 1; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>📷 Photo Collector</h1>
+    <nav class="tabs">
+      <button class="tab active" data-tab="photos">Photos</button>
+      <button class="tab" data-tab="collections">Collections</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- PHOTOS TAB -->
+    <section id="tab-photos">
+      <div class="row" style="margin-bottom:12px">
+        <label class="btn primary">
+          ＋ Add photos
+          <input id="file-input" type="file" accept="image/*" multiple hidden>
+        </label>
+        <button class="btn" id="select-btn">Select</button>
+        <span class="spacer"></span>
+        <span class="muted" id="photo-count"></span>
+      </div>
+
+      <div class="card" id="filter-card">
+        <p class="label">Person</p>
+        <div class="chips" id="filter-people"></div>
+        <div class="row muted" id="match-row" style="margin-top:6px">
+          Show photos with
+          <select id="match-mode">
+            <option value="any">any selected person</option>
+            <option value="all">all selected people</option>
+          </select>
+        </div>
+        <p class="label" style="margin-top:12px">Date</p>
+        <div class="dates">
+          <label>From <input type="date" id="date-from"></label>
+          <label>To <input type="date" id="date-to"></label>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <button class="btn" id="clear-filter">Clear</button>
+          <span class="spacer"></span>
+          <button class="btn primary" id="save-collection" disabled>Save as collection</button>
+        </div>
+      </div>
+
+      <div id="photo-list"></div>
+    </section>
+
+    <!-- COLLECTIONS TAB -->
+    <section id="tab-collections" class="hidden">
+      <div id="collection-list"></div>
+      <div id="collection-detail" class="hidden">
+        <div class="row" style="margin-bottom:8px">
+          <button class="btn" id="back-btn">← Back</button>
+          <span class="spacer"></span>
+          <button class="btn" id="share-btn">Share</button>
+          <button class="btn" id="download-btn">Download</button>
+          <button class="btn danger" id="delete-collection">Delete</button>
+        </div>
+        <h2 id="coll-title" style="margin:8px 0 2px"></h2>
+        <p class="muted" id="coll-desc" style="margin:0 0 8px"></p>
+        <div id="coll-photos"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Selection action bar -->
+  <div class="bar hidden" id="select-bar">
+    <span id="sel-count">0 selected</span>
+    <div class="row">
+      <button class="btn" id="sel-all">All</button>
+      <button class="btn primary" id="sel-tag" disabled>Tag person</button>
+      <button class="btn danger" id="sel-delete" disabled>Remove</button>
+      <button class="btn" id="sel-done">Done</button>
+    </div>
+  </div>
+
+  <!-- Photo viewer -->
+  <dialog id="viewer" class="viewer">
+    <img id="viewer-img" alt="">
+    <div class="dlg-body">
+      <p class="label">Date taken</p>
+      <div class="row">
+        <input type="datetime-local" id="viewer-date" step="1">
+        <span class="muted" id="viewer-source"></span>
+      </div>
+      <p class="label" style="margin-top:14px">People in this photo</p>
+      <div class="chips" id="viewer-people"></div>
+      <div class="row" style="margin-top:8px">
+        <input type="text" id="viewer-new-person" placeholder="Add a name…" list="people-list" style="flex:1">
+        <button class="btn" id="viewer-add-person">Add</button>
+      </div>
+      <div class="row" style="margin-top:16px">
+        <button class="btn" id="viewer-prev">‹</button>
+        <button class="btn" id="viewer-next">›</button>
+        <span class="spacer"></span>
+        <button class="btn primary" id="viewer-close">Done</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Tag people dialog (for multi-select) -->
+  <dialog id="tagger">
+    <div class="dlg-body">
+      <h3 style="margin-top:0">Who is in these photos?</h3>
+      <p class="muted">Tap names to add them to the selected photos.</p>
+      <div class="chips" id="tagger-people"></div>
+      <div class="row" style="margin-top:10px">
+        <input type="text" id="tagger-new" placeholder="New person name…" list="people-list" style="flex:1">
+        <button class="btn" id="tagger-add">Add</button>
+      </div>
+      <div class="row" style="margin-top:16px">
+        <span class="spacer"></span>
+        <button class="btn" id="tagger-cancel">Cancel</button>
+        <button class="btn primary" id="tagger-apply">Apply</button>
+      </div>
+    </div>
+  </dialog>
+
+  <datalist id="people-list"></datalist>
+
+  <script src="exif.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
