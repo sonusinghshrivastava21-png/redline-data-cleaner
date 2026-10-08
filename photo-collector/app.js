@@ -32,6 +32,7 @@ async function dbAll(store) {
 }
 
 async function dbPut(store, values) {
+  try { await openDb(); } catch (e) { return; } // no storage: keep working in memory
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(store, 'readwrite');
@@ -42,6 +43,7 @@ async function dbPut(store, values) {
 }
 
 async function dbDelete(store, ids) {
+  try { await openDb(); } catch (e) { return; }
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(store, 'readwrite');
@@ -385,6 +387,36 @@ function asFile(p) {
   return p.blob instanceof File ? p.blob : new File([p.blob], p.name, { type: p.type || p.blob.type });
 }
 
+// In-page replacement for prompt()/confirm(): resolves to the typed text
+// (when `value` is given), true (confirmed) or null (cancelled).
+function ask({ title, text = '', value, ok = 'OK', danger = false }) {
+  const dlg = $('ask');
+  $('ask-title').textContent = title;
+  $('ask-text').textContent = text;
+  $('ask-text').hidden = !text;
+  $('ask-input').hidden = value === undefined;
+  $('ask-input').value = value ?? '';
+  $('ask-ok').textContent = ok;
+  $('ask-ok').className = 'btn ' + (danger ? 'danger' : 'primary');
+  return new Promise((resolve) => {
+    const finish = (result) => {
+      $('ask-form').onsubmit = $('ask-cancel').onclick = dlg.oncancel = null;
+      dlg.close();
+      resolve(result);
+    };
+    $('ask-form').onsubmit = (e) => {
+      e.preventDefault();
+      if (value === undefined) return finish(true);
+      const v = $('ask-input').value.trim();
+      if (v) finish(v);
+    };
+    $('ask-cancel').onclick = () => finish(null);
+    dlg.oncancel = (e) => { e.preventDefault(); finish(null); };
+    dlg.showModal();
+    if (value !== undefined) $('ask-input').select();
+  });
+}
+
 // ---------- Events ----------
 function wire() {
   document.querySelectorAll('.tab').forEach((t) => {
@@ -420,7 +452,9 @@ function wire() {
   $('sel-tag').onclick = openTagger;
   $('sel-delete').onclick = async () => {
     const n = state.selected.size;
-    if (!confirm(`Remove ${n} photo${n > 1 ? 's' : ''} from this app? (Photos on your phone are not deleted.)`)) return;
+    if (!await ask({ title: `Remove ${n} photo${n > 1 ? 's' : ''}?`,
+      text: 'They are removed from this app only. Photos on your phone are not deleted.',
+      ok: 'Remove', danger: true })) return;
     await dbDelete('photos', [...state.selected]);
     state.photos = state.photos.filter((p) => !state.selected.has(p.id));
     state.selected.clear();
@@ -459,9 +493,9 @@ function wire() {
   $('clear-filter').onclick = () => { state.filter = { people: [], mode: 'any', from: '', to: '' }; render(); };
   $('save-collection').onclick = async () => {
     const f = state.filter;
-    const name = prompt('Name this collection:', describeFilter(f));
-    if (!name || !name.trim()) return;
-    const c = { id: uid(), name: name.trim(), filter: { ...f, people: [...f.people] }, created: Date.now() };
+    const name = await ask({ title: 'Name this collection', value: describeFilter(f), ok: 'Save' });
+    if (!name) return;
+    const c = { id: uid(), name, filter: { ...f, people: [...f.people] }, created: Date.now() };
     await dbPut('collections', c);
     state.collections.push(c);
     state.openCollection = c.id;
@@ -512,7 +546,8 @@ function wire() {
   $('back-btn').onclick = () => { state.openCollection = null; render(); };
   $('delete-collection').onclick = async () => {
     const c = state.collections.find((x) => x.id === state.openCollection);
-    if (!c || !confirm(`Delete collection “${c.name}”? Photos are kept.`)) return;
+    if (!c || !await ask({ title: `Delete “${c.name}”?`, text: 'The photos stay in the app.',
+      ok: 'Delete', danger: true })) return;
     await dbDelete('collections', c.id);
     state.collections = state.collections.filter((x) => x.id !== c.id);
     state.openCollection = null;
@@ -521,11 +556,7 @@ function wire() {
   $('share-btn').onclick = async () => {
     const files = collectionPhotos().map(asFile);
     const c = state.collections.find((x) => x.id === state.openCollection);
-    if (navigator.canShare && navigator.canShare({ files })) {
-      try { await navigator.share({ files, title: c.name }); } catch (e) { /* cancelled */ }
-    } else {
-      alert('Sharing files is not supported in this browser. Use Download instead.');
-    }
+    try { await navigator.share({ files, title: c.name }); } catch (e) { /* cancelled or refused */ }
   };
   $('download-btn').onclick = async () => {
     for (const f of collectionPhotos().map(asFile)) {
@@ -542,6 +573,10 @@ function wire() {
 // ---------- Start ----------
 (async function init() {
   wire();
+  const probe = new File([''], 'x.jpg', { type: 'image/jpeg' });
+  $('share-btn').hidden = !(navigator.canShare && navigator.canShare({ files: [probe] }));
+  // Embedded pages (e.g. a shared preview) usually block downloads.
+  $('download-btn').hidden = window.self !== window.top;
   try {
     [state.photos, state.collections] = await Promise.all([dbAll('photos'), dbAll('collections')]);
   } catch (e) {

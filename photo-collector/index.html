@@ -12,10 +12,16 @@
       --line: #dfe3e8; --accent: #1f6feb; --accent-soft: #e3edff; --danger: #d1242f;
     }
     @media (prefers-color-scheme: dark) {
-      :root {
+      :root:not([data-theme="light"]) {
         --bg: #0f1215; --card: #1a1f24; --text: #e8ecf0; --muted: #9aa4ae;
         --line: #2c333a; --accent: #4c8dff; --accent-soft: #1d2b44; --danger: #ff6b6b;
+        color-scheme: dark;
       }
+    }
+    :root[data-theme="dark"] {
+        --bg: #0f1215; --card: #1a1f24; --text: #e8ecf0; --muted: #9aa4ae;
+        --line: #2c333a; --accent: #4c8dff; --accent-soft: #1d2b44; --danger: #ff6b6b;
+      color-scheme: dark;
     }
     * { box-sizing: border-box; }
     body {
@@ -100,7 +106,7 @@
     dialog::backdrop { background: rgba(0,0,0,.6); }
     .dlg-body { padding: 16px; }
     .viewer img { width: 100%; max-height: 60vh; object-fit: contain; background: #000; display: block; }
-    .hidden { display: none !important; }
+    .hidden, [hidden] { display: none !important; }
     .spacer { flex: 1; }
   </style>
 </head>
@@ -220,6 +226,20 @@
         <button class="btn primary" id="tagger-apply">Apply</button>
       </div>
     </div>
+  </dialog>
+
+  <!-- Ask dialog (name a collection / confirm) -->
+  <dialog id="ask">
+    <form class="dlg-body" method="dialog" id="ask-form">
+      <h3 id="ask-title" style="margin-top:0"></h3>
+      <p class="muted" id="ask-text"></p>
+      <input type="text" id="ask-input" style="width:100%">
+      <div class="row" style="margin-top:16px">
+        <span class="spacer"></span>
+        <button class="btn" type="button" id="ask-cancel">Cancel</button>
+        <button class="btn primary" type="submit" id="ask-ok">OK</button>
+      </div>
+    </form>
   </dialog>
 
   <datalist id="people-list"></datalist>
