@@ -58,3 +58,49 @@ python mw_predictor.py --flow 1795 --pressure 162 --temp 541 \
   --vacuum 0.156 --vacuum-unit kg/cm2_abs \
   --crh-pressure 42.33 --hrh-pressure 40.16 --hrh-temp 534 --actual-mw 559
 ```
+
+## Vacuum Impact Analyzer (web page, `vacuum_impact_analyzer.html`)
+
+Browser version of the vacuum event analyzer below, for people without Python.
+Upload a CSV, choose the vacuum, load and coal columns, and the page lists every
+vacuum rise with the load drop and coal increase that followed. It shows a chart
+for each event and has a button to copy the table into Excel. The CSV is read in
+the browser and is not uploaded anywhere.
+
+## Vacuum event analyzer (`vacuum_event_analyzer.py`)
+
+Reads a continuous 1-second plant CSV and finds every rise in condenser vacuum
+(absolute pressure, kg/cm² abs; a higher value means worse vacuum). For each rise
+it reads the rows that follow and reports:
+
+- how much load (MW) dropped, and how many seconds after the rise
+- how much coal flow went up to hold the load, how long before coal responded,
+  and where it settled
+- whether load recovered, MW lost and extra coal per 0.01 kg/cm² of vacuum rise
+- specific coal (coal / MW) before vs after the rise
+
+```bash
+pip install -r requirements.txt
+python vacuum_event_analyzer.py plant.csv \
+  --vac-col "COND VAC" --load-col "GEN MW" \
+  --coal-col "FEEDER A" --coal-col "FEEDER B" --coal-col "FEEDER C" \
+  --dayfirst --rise 0.005 --observe 600 --plot-dir plots
+```
+
+Columns are auto-detected by name (`vac`, `mw`/`load`, `coal`, `time`) when
+not given. Repeat `--coal-col` to add up several feeders. If there is no time
+column, the tool treats each row as 1 second.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--rise` | 0.005 | Smallest vacuum rise (kg/cm² abs) that counts as an event |
+| `--rise-window` | 120 s | Time span the rise has to happen within |
+| `--smooth` | 5 s | Rolling-median filter on vacuum |
+| `--baseline` | 60 s | Time before the rise averaged as the "before" values |
+| `--observe` | 600 s | Time after the rise to watch load and coal |
+| `--settle` | 60 s | Last part of the observe window averaged as the "end" values |
+| `--coal-threshold` | 3σ of baseline | Coal rise that counts as "coal responded" |
+
+The tool writes one row per event to `--out` (default `vacuum_events.csv`).
+With `--plot-dir`, it also saves a vacuum, load and coal chart for each event
+(needs matplotlib).

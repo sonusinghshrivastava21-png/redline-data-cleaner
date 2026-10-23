@@ -1,2 +1,4 @@
 iapws>=1.5
+pandas
+matplotlib
 pytest
