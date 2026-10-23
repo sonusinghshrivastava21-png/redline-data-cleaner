@@ -59,6 +59,14 @@ python mw_predictor.py --flow 1795 --pressure 162 --temp 541 \
   --crh-pressure 42.33 --hrh-pressure 40.16 --hrh-temp 534 --actual-mw 559
 ```
 
+## Vacuum Impact Analyzer (web page, `vacuum_impact_analyzer.html`)
+
+Browser version of the vacuum event analyzer below, for people without Python.
+Upload a CSV, choose the vacuum, load and coal columns, and the page lists every
+vacuum rise with the load drop and coal increase that followed. It shows a chart
+for each event and has a button to copy the table into Excel. The CSV is read in
+the browser and is not uploaded anywhere.
+
 ## Vacuum event analyzer (`vacuum_event_analyzer.py`)
 
 Reads a continuous 1-second plant CSV and finds every rise in condenser vacuum

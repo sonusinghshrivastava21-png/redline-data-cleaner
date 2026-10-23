@@ -1,0 +1,851 @@
+<title>Vacuum Impact Analyzer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: control-room console. Narrow setup rail on the left, results on the right; stacks on phones. */
+:root {
+  --bg: #e9edf0;
+  --panel: #f8fafb;
+  --ink: #16212a;
+  --muted: #5a6873;
+  --line: #cfd8de;
+  --grid: #e1e7eb;
+  --accent: #0c6b86;
+  --accent-ink: #ffffff;
+  --vac: #c2410c;
+  --load: #1f4fc9;
+  --coal: #7a5524;
+  --band: rgba(12, 107, 134, 0.07);
+  --band-sel: rgba(12, 107, 134, 0.18);
+  --good: #1d7a46;
+  --good-bg: #dcf0e3;
+  --warn: #9a5b00;
+  --warn-bg: #f8ead0;
+  --bad: #b42318;
+  --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11171c; --panel: #182128; --ink: #e3e9ed; --muted: #92a1ac; --line: #2b3843; --grid: #222d35;
+    --accent: #4fb3cf; --accent-ink: #0b1418; --vac: #f0804a; --load: #7aa2ff; --coal: #d4a565;
+    --band: rgba(79, 179, 207, 0.08); --band-sel: rgba(79, 179, 207, 0.22);
+    --good: #6fd39a; --good-bg: #173827; --warn: #f2b65a; --warn-bg: #3a2c12; --bad: #ff8a80;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11171c; --panel: #182128; --ink: #e3e9ed; --muted: #92a1ac; --line: #2b3843; --grid: #222d35;
+  --accent: #4fb3cf; --accent-ink: #0b1418; --vac: #f0804a; --load: #7aa2ff; --coal: #d4a565;
+  --band: rgba(79, 179, 207, 0.08); --band-sel: rgba(79, 179, 207, 0.22);
+  --good: #6fd39a; --good-bg: #173827; --warn: #f2b65a; --warn-bg: #3a2c12; --bad: #ff8a80;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 14px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 40px;
+}
+.wrap { max-width: 1320px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 8px 24px; border-bottom: 2px solid var(--ink); padding-bottom: 10px; }
+h1 { font-family: var(--font-display); font-weight: 600; font-size: 34px; line-height: 1; letter-spacing: 0.01em; margin: 0; text-transform: uppercase; text-wrap: balance; }
+h1 small { display: block; font-family: var(--font-mono); font-size: 11px; font-weight: 400; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 6px; }
+header p { margin: 0; color: var(--muted); max-width: 62ch; }
+h2 { font-family: var(--font-display); font-weight: 600; font-size: 19px; text-transform: uppercase; letter-spacing: 0.04em; margin: 0; }
+.label { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+
+.grid { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 900px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+.rail, .main { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 14px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+
+.drop { border: 1.5px dashed var(--line); border-radius: 4px; padding: 18px 12px; text-align: center; display: flex; flex-direction: column; gap: 8px; align-items: center; cursor: pointer; transition: border-color .15s, background .15s; }
+.drop.over, .drop:hover { border-color: var(--accent); background: var(--band); }
+.drop strong { font-size: 15px; }
+.drop input { display: none; }
+.filename { font-family: var(--font-mono); font-size: 12px; word-break: break-all; }
+.tag { display: inline-block; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; padding: 1px 6px; border-radius: 3px; background: var(--warn-bg); color: var(--warn); }
+
+button { font: inherit; font-weight: 500; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 3px; padding: 6px 12px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button:focus-visible, select:focus-visible, input:focus-visible, .drop:focus-visible, tr:focus-visible, canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.field { display: flex; flex-direction: column; gap: 3px; }
+.field select, .field input[type="number"], .field input[type="text"] { font: inherit; font-family: var(--font-mono); font-size: 12.5px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 3px; background: var(--bg); color: var(--ink); width: 100%; min-width: 0; }
+.field .hint { font-size: 11.5px; color: var(--muted); line-height: 1.35; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.checks { display: flex; flex-direction: column; gap: 2px; max-height: 170px; overflow: auto; border: 1px solid var(--line); border-radius: 3px; padding: 6px 8px; background: var(--bg); }
+.checks label { display: flex; gap: 7px; align-items: baseline; font-family: var(--font-mono); font-size: 12px; cursor: pointer; word-break: break-all; }
+details summary { cursor: pointer; font-weight: 500; }
+details ol { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; display: flex; flex-direction: column; gap: 4px; }
+
+.status { font-size: 12.5px; color: var(--muted); min-height: 1.4em; }
+.status.err { color: var(--bad); }
+
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+@media (max-width: 640px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.tile { background: var(--panel); padding: 11px 13px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tile .v { font-family: var(--font-display); font-size: 28px; font-weight: 600; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.tile .v small { font-family: var(--font-mono); font-size: 11px; font-weight: 400; color: var(--muted); margin-left: 3px; }
+.tile .s { font-size: 11.5px; color: var(--muted); }
+.tile.vac .v { color: var(--vac); } .tile.load .v { color: var(--load); } .tile.coal .v { color: var(--coal); }
+
+.chart-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); }
+.legend i { display: inline-block; width: 14px; height: 3px; vertical-align: middle; margin-right: 5px; border-radius: 2px; }
+.stack { display: flex; flex-direction: column; gap: 0; }
+.stack .row { position: relative; }
+.stack .row .yl { position: absolute; left: 0; top: 2px; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.05em; text-transform: uppercase; pointer-events: none; }
+canvas { display: block; width: 100%; }
+.ov canvas { height: 92px; cursor: pointer; } .ov .row:last-child canvas { height: 112px; }
+.dt canvas { height: 150px; cursor: crosshair; } .dt .row:last-child canvas { height: 172px; }
+.readout { font-family: var(--font-mono); font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 16px; min-height: 1.5em; }
+.readout b { font-weight: 500; }
+
+.story { font-size: 14.5px; max-width: 80ch; margin: 0; }
+.story b { font-variant-numeric: tabular-nums; }
+.nav { display: flex; gap: 6px; }
+
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 4px; }
+table { border-collapse: collapse; width: 100%; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+th, td { padding: 6px 9px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
+th { font-family: var(--font-mono); font-weight: 500; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); background: var(--panel); position: sticky; top: 0; vertical-align: bottom; }
+th.grp { text-align: center; border-bottom: 2px solid currentColor; }
+th.grp.vac { color: var(--vac); } th.grp.load { color: var(--load); } th.grp.coal { color: var(--coal); }
+td:first-child, th:first-child, td:nth-child(2), th:nth-child(2) { text-align: left; }
+tbody tr { cursor: pointer; background: var(--panel); }
+tbody tr:hover { background: var(--band); }
+tbody tr.sel { background: var(--band-sel); }
+.pill { display: inline-block; font-family: var(--font-mono); font-size: 10.5px; padding: 1px 7px; border-radius: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
+.pill.ok { background: var(--good-bg); color: var(--good); }
+.pill.no { background: var(--warn-bg); color: var(--warn); }
+.empty { padding: 26px 14px; text-align: center; color: var(--muted); }
+.foot { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1><small>Condenser vacuum · kg/cm² abs</small>Vacuum Impact Analyzer</h1>
+    <p>Upload a 1-second plant data CSV. The tool finds every rise in condenser vacuum (absolute pressure) and reads the rows that follow to show how much load dropped and how much extra coal it took to hold load.</p>
+  </header>
+
+  <div class="grid">
+    <aside class="rail">
+      <section class="panel" aria-labelledby="h-data">
+        <h2 id="h-data">1 · Data</h2>
+        <label class="drop" id="drop" tabindex="0">
+          <input type="file" id="file" accept=".csv,.txt,text/csv">
+          <strong>Drop a CSV here</strong>
+          <span class="label">or click to choose a file</span>
+        </label>
+        <div class="foot">
+          <div class="filename" id="fname"></div>
+          <button type="button" id="sampleBtn">Load example data</button>
+        </div>
+        <div class="status" id="status" role="status"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="h-cols">
+        <h2 id="h-cols">2 · Columns</h2>
+        <div class="field">
+          <label class="label" for="colTime">Timestamp</label>
+          <select id="colTime"></select>
+        </div>
+        <div class="field">
+          <label class="label" for="dateOrder">Date order</label>
+          <select id="dateOrder">
+            <option value="auto">Auto-detect</option>
+            <option value="dmy">DD-MM-YYYY</option>
+            <option value="mdy">MM-DD-YYYY</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="label" for="colVac">Condenser vacuum (kg/cm² abs)</label>
+          <select id="colVac"></select>
+        </div>
+        <div class="field">
+          <label class="label" for="colLoad">Load (MW)</label>
+          <select id="colLoad"></select>
+        </div>
+        <div class="field">
+          <span class="label" id="coalLbl">Coal flow (ticked columns are added up)</span>
+          <div class="checks" id="coalList" role="group" aria-labelledby="coalLbl"></div>
+          <span class="hint">Tick one total coal tag, or every feeder.</span>
+        </div>
+        <div class="field">
+          <label class="label" for="coalUnit">Coal unit</label>
+          <input type="text" id="coalUnit" value="t/h">
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="h-set">
+        <h2 id="h-set">3 · Detection</h2>
+        <div class="pair">
+          <div class="field"><label class="label" for="pRise">Min. rise</label><input type="number" id="pRise" value="0.005" step="0.001" min="0.0001"><span class="hint">kg/cm² abs</span></div>
+          <div class="field"><label class="label" for="pRiseWin">Within</label><input type="number" id="pRiseWin" value="120" step="10" min="5"><span class="hint">seconds</span></div>
+          <div class="field"><label class="label" for="pBase">Baseline</label><input type="number" id="pBase" value="60" step="10" min="5"><span class="hint">s before rise</span></div>
+          <div class="field"><label class="label" for="pObs">Watch for</label><input type="number" id="pObs" value="600" step="60" min="30"><span class="hint">s after rise</span></div>
+          <div class="field"><label class="label" for="pSettle">Settled = last</label><input type="number" id="pSettle" value="60" step="10" min="5"><span class="hint">s of the watch</span></div>
+          <div class="field"><label class="label" for="pSmooth">Smoothing</label><input type="number" id="pSmooth" value="5" step="1" min="1"><span class="hint">s median on vacuum</span></div>
+        </div>
+        <div class="field">
+          <label class="label" for="pCoalThr">Coal counts as responding at +</label>
+          <input type="number" id="pCoalThr" placeholder="auto (3× baseline noise)" step="0.1" min="0">
+        </div>
+        <details>
+          <summary>How events are found</summary>
+          <ol>
+            <li>Vacuum is smoothed with a rolling median to remove sensor noise.</li>
+            <li>An event is a rise of at least the minimum, within the set time.</li>
+            <li>The event starts at the last moment vacuum was still near its low point. "Before" values are the average of the baseline period.</li>
+            <li>Load and coal are watched for the set time. Max drop / max increase are the extremes in that period; "settled" values average its last part.</li>
+            <li>The next event is only looked for after the watch ends, so one upset is counted once.</li>
+          </ol>
+        </details>
+      </section>
+    </aside>
+
+    <main class="main">
+      <section class="tiles" id="tiles" aria-label="Summary across events"></section>
+
+      <section class="panel" aria-labelledby="h-ov">
+        <div class="chart-head">
+          <h2 id="h-ov">Whole file</h2>
+          <span class="legend">Shaded bands are detected events. Click one to inspect it.</span>
+        </div>
+        <div class="stack ov" id="ov">
+          <div class="row"><span class="yl" style="color:var(--vac)">Vacuum</span><canvas id="ovVac" aria-label="Vacuum over whole file"></canvas></div>
+          <div class="row"><span class="yl" style="color:var(--load)">Load MW</span><canvas id="ovLoad" aria-label="Load over whole file"></canvas></div>
+          <div class="row"><span class="yl" style="color:var(--coal)" id="ovCoalLbl">Coal</span><canvas id="ovCoal" aria-label="Coal over whole file"></canvas></div>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="h-ev" id="detailPanel">
+        <div class="chart-head">
+          <h2 id="h-ev">Event</h2>
+          <div class="nav"><button type="button" id="prevBtn" aria-label="Previous event">◀ Prev</button><button type="button" id="nextBtn" aria-label="Next event">Next ▶</button></div>
+        </div>
+        <p class="story" id="story"></p>
+        <div class="legend">
+          <span><i style="background:var(--muted)"></i>Before level (dashed)</span>
+          <span><i style="background:var(--load)"></i>Lowest load</span>
+          <span><i style="background:var(--coal)"></i>Coal starts rising</span>
+        </div>
+        <div class="stack dt" id="dt">
+          <div class="row"><span class="yl" style="color:var(--vac)">Vacuum kg/cm² abs</span><canvas id="dtVac" tabindex="0" aria-label="Vacuum during event"></canvas></div>
+          <div class="row"><span class="yl" style="color:var(--load)">Load MW</span><canvas id="dtLoad" aria-label="Load during event"></canvas></div>
+          <div class="row"><span class="yl" style="color:var(--coal)" id="dtCoalLbl">Coal</span><canvas id="dtCoal" aria-label="Coal during event"></canvas></div>
+        </div>
+        <div class="readout" id="readout"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="h-tab">
+        <div class="chart-head">
+          <h2 id="h-tab">All events</h2>
+          <button type="button" id="copyBtn">Copy table for Excel</button>
+        </div>
+        <div class="table-wrap" id="tableWrap"></div>
+        <div class="status" id="copyStatus" role="status"></div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script>
+(() => {
+"use strict";
+const $ = (s) => document.getElementById(s);
+const S = { source: null, isSample: false, headers: [], sample: [], data: null, timeKind: "num", res: null, sel: 0, cursor: null, maps: {} };
+
+/* ---------- small helpers ---------- */
+const lowerBound = (a, v) => { let lo = 0, hi = a.length; while (lo < hi) { const m = (lo + hi) >> 1; if (a[m] < v) lo = m + 1; else hi = m; } return lo; };
+const upperBound = (a, v) => { let lo = 0, hi = a.length; while (lo < hi) { const m = (lo + hi) >> 1; if (a[m] <= v) lo = m + 1; else hi = m; } return lo; };
+const ok = (v) => v === v && v !== Infinity && v !== -Infinity;
+const f = (v, d) => (ok(v) ? v.toFixed(d) : "–");
+const sg = (v, d) => (ok(v) ? (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(d) : "–");
+const num = (s) => { if (s == null) return NaN; s = String(s).trim().replace(/,/g, ""); return s === "" ? NaN : Number(s); };
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const pad2 = (n) => String(n).padStart(2, "0");
+const coalUnit = () => $("coalUnit").value.trim() || "t/h";
+
+/* ---------- time parsing ---------- */
+const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+const DT_RE = /^(\d{1,4})[-\/.](\d{1,2}|[A-Za-z]{3,9})[-\/.](\d{2,4})(?:[ T,]+(\d{1,2}):(\d{2})(?::(\d{2})(\.\d+)?)?\s*([AaPp][Mm])?)?/;
+const TOD_RE = /^(\d{1,2}):(\d{2})(?::(\d{2})(\.\d+)?)?\s*([AaPp][Mm])?$/;
+
+function hms(h, mi, s, frac, ampm) {
+  h = +h; if (ampm) { const pm = /p/i.test(ampm); if (pm && h < 12) h += 12; if (!pm && h === 12) h = 0; }
+  return h * 3600 + (+mi || 0) * 60 + (+s || 0) + (frac ? +frac : 0);
+}
+function detectOrder(values) {
+  for (const v of values) {
+    const m = DT_RE.exec(String(v).trim()); if (!m || m[1].length === 4 || isNaN(+m[2])) continue;
+    if (+m[1] > 12) return "dmy"; if (+m[2] > 12) return "mdy";
+  }
+  return "dmy";
+}
+function timeKindOf(values) {
+  for (const v of values) {
+    const s = String(v).trim(); if (!s) continue;
+    if (/^-?\d+(\.\d+)?$/.test(s)) { const x = +s; return x > 20000 && x < 80000 ? "excel" : "num"; }
+    if (DT_RE.test(s)) return "date";
+    if (TOD_RE.test(s)) return "tod";
+    if (!isNaN(Date.parse(s))) return "date";
+    return "bad";
+  }
+  return "bad";
+}
+function parseTime(s, order) {
+  s = String(s).trim(); if (!s) return NaN;
+  if (/^-?\d+(\.\d+)?$/.test(s)) { const x = +s; if (x > 20000 && x < 80000) return Math.round((x - 25569) * 86400 * 1000) / 1000; return x > 1e11 ? x / 1000 : x; }
+  let m = DT_RE.exec(s);
+  if (m) {
+    let y, mo, d;
+    if (m[1].length === 4) { y = +m[1]; mo = +m[2]; d = +m[3]; }
+    else {
+      y = +m[3]; if (y < 100) y += 2000;
+      if (isNaN(+m[2])) { mo = MONTHS[m[2].slice(0, 3).toLowerCase()]; d = +m[1]; }
+      else if (order === "mdy") { mo = +m[1]; d = +m[2]; } else { d = +m[1]; mo = +m[2]; }
+    }
+    if (!mo) return NaN;
+    return Date.UTC(y, mo - 1, d) / 1000 + (m[4] != null ? hms(m[4], m[5], m[6], m[7], m[8]) : 0);
+  }
+  m = TOD_RE.exec(s);
+  if (m) return hms(m[1], m[2], m[3], m[4], m[5]);
+  const p = Date.parse(s); if (isNaN(p)) return NaN;
+  const dt = new Date(p);
+  return Date.UTC(dt.getFullYear(), dt.getMonth(), dt.getDate(), dt.getHours(), dt.getMinutes(), dt.getSeconds()) / 1000;
+}
+function fmtTime(t, short) {
+  if (!ok(t)) return "–";
+  if (S.timeKind === "date" || S.timeKind === "excel") {
+    const d = new Date(Math.round(t) * 1000);
+    const hm = pad2(d.getUTCHours()) + ":" + pad2(d.getUTCMinutes()) + (short ? "" : ":" + pad2(d.getUTCSeconds()));
+    return short ? hm : `${pad2(d.getUTCDate())}-${pad2(d.getUTCMonth() + 1)}-${d.getUTCFullYear()} ${hm}`;
+  }
+  const day = Math.floor(t / 86400), r = ((t % 86400) + 86400) % 86400;
+  const hm = pad2(Math.floor(r / 3600)) + ":" + pad2(Math.floor((r % 3600) / 60)) + (short ? "" : ":" + pad2(Math.floor(r % 60)));
+  if (S.timeKind === "tod") return (day > 0 && !short ? `day ${day + 1} ` : "") + hm;
+  return (short ? "" : `${Math.round(t)} s · `) + (day > 0 ? day + "d " : "") + hm;
+}
+
+/* ---------- column guessing ---------- */
+const RX = {
+  time: /time|date|stamp/i,
+  vac: /vac|cond(enser)?[\s_.-]*(press|pr\b)|back[\s_.-]*press/i,
+  load: /\bmw\b|mw\b|load|gen[\s_.-]*(power|output)|active[\s_.-]*power/i,
+  coal: /coal|feeder|fuel/i,
+  notCoal: /speed|rpm|current|amp|temp|press|\bdp\b|motor|valve|cmd|demand|bias/i,
+};
+function guess(headers) {
+  const pick = (rx, avoid) => headers.find((h) => rx.test(h) && !(avoid && avoid.test(h))) ?? "";
+  const vac = pick(RX.vac);
+  const load = headers.find((h) => RX.load.test(h) && h !== vac && !RX.coal.test(h)) ?? "";
+  let coal = headers.filter((h) => RX.coal.test(h) && !RX.notCoal.test(h) && h !== load && h !== vac);
+  const total = coal.filter((h) => /total|tot\b|sum/i.test(h));
+  if (total.length) coal = [total[0]];
+  return { time: pick(RX.time), vac, load, coal };
+}
+function fillMapping(headers, g) {
+  const opts = (sel, extra) => (extra ? `<option value="">${extra}</option>` : "") + headers.map((h, i) => `<option value="${i}"${h === sel ? " selected" : ""}>${esc(h)}</option>`).join("");
+  $("colTime").innerHTML = opts(g.time, "(none: 1 row = 1 second)");
+  $("colVac").innerHTML = opts(g.vac, "— choose —");
+  $("colLoad").innerHTML = opts(g.load, "— choose —");
+  $("coalList").innerHTML = headers.map((h, i) => `<label><input type="checkbox" value="${i}" id="coal-${i}"${g.coal.includes(h) ? " checked" : ""}> ${esc(h)}</label>`).join("");
+}
+
+/* ---------- loading ---------- */
+function setStatus(msg, err) { const el = $("status"); el.textContent = msg; el.className = "status" + (err ? " err" : ""); }
+
+function openSource(src, name, isSample) {
+  S.source = src; S.isSample = isSample;
+  $("fname").innerHTML = isSample ? `<span class="tag">Example data</span> ${esc(name)}` : esc(name);
+  setStatus("Reading columns…");
+  Papa.parse(src, {
+    preview: 60, skipEmptyLines: true,
+    complete: (r) => {
+      if (!r.data.length) { setStatus("The file is empty.", true); return; }
+      S.headers = r.data[0].map((h) => String(h).trim());
+      S.sample = r.data.slice(1);
+      fillMapping(S.headers, guess(S.headers));
+      loadData();
+    },
+    error: (e) => setStatus("Could not read the file: " + e.message, true),
+  });
+}
+
+function mapping() {
+  const ti = $("colTime").value, vi = $("colVac").value, li = $("colLoad").value;
+  const ci = [...$("coalList").querySelectorAll("input:checked")].map((c) => +c.value);
+  return { ti: ti === "" ? -1 : +ti, vi: vi === "" ? -1 : +vi, li: li === "" ? -1 : +li, ci };
+}
+
+let loadToken = 0;
+function loadData() {
+  const m = mapping();
+  const missing = [m.vi < 0 && "vacuum", m.li < 0 && "load", !m.ci.length && "coal"].filter(Boolean);
+  if (missing.length) { S.data = null; S.res = null; renderAll(); setStatus(`Choose the ${missing.join(", ")} column${missing.length > 1 ? "s" : ""} under Columns.`, true); return; }
+
+  let order = $("dateOrder").value;
+  const sampleTimes = m.ti >= 0 ? S.sample.map((r) => r[m.ti]) : [];
+  S.timeKind = m.ti >= 0 ? timeKindOf(sampleTimes) : "num";
+  if (S.timeKind === "bad") { setStatus(`Could not read the times in "${S.headers[m.ti]}". Pick another timestamp column, or "(none)".`, true); return; }
+  if (order === "auto") order = detectOrder(sampleTimes);
+
+  const T = [], V = [], L = [], C = [];
+  let first = true, rows = 0, dayOff = 0, lastTod = -Infinity;
+  const tok = ++loadToken;
+  setStatus("Reading rows…");
+  Papa.parse(S.source, {
+    skipEmptyLines: true,
+    step: (r) => {
+      if (tok !== loadToken) return;
+      if (first) { first = false; return; }
+      const row = r.data;
+      let t;
+      if (m.ti < 0) t = rows;
+      else {
+        t = parseTime(row[m.ti], order);
+        if (S.timeKind === "tod" && ok(t)) { if (t + dayOff < lastTod - 43200) dayOff += 86400; t += dayOff; lastTod = t; }
+      }
+      rows++;
+      let c = NaN;
+      for (const i of m.ci) { const v = num(row[i]); if (ok(v)) c = (ok(c) ? c : 0) + v; }
+      T.push(t); V.push(num(row[m.vi])); L.push(num(row[m.li])); C.push(c);
+      if (rows % 50000 === 0) setStatus(`Reading rows… ${rows.toLocaleString()}`);
+    },
+    complete: () => { if (tok === loadToken) finishLoad(T, V, L, C, rows); },
+    error: (e) => setStatus("Could not read the file: " + e.message, true),
+  });
+}
+
+function interpolate(y, maxGap) {
+  const n = y.length; let i = 0;
+  while (i < n) {
+    if (ok(y[i])) { i++; continue; }
+    let j = i; while (j < n && !ok(y[j])) j++;
+    if (i > 0 && j < n && j - i <= maxGap) { const a = y[i - 1], b = y[j]; for (let k = i; k < j; k++) y[k] = a + (b - a) * (k - i + 1) / (j - i + 1); }
+    i = j;
+  }
+}
+
+function finishLoad(T, V, L, C, rows) {
+  let idx = [];
+  for (let i = 0; i < T.length; i++) if (ok(T[i])) idx.push(i);
+  let sorted = true; for (let k = 1; k < idx.length; k++) if (T[idx[k]] < T[idx[k - 1]]) { sorted = false; break; }
+  if (!sorted) idx.sort((a, b) => T[a] - T[b]);
+  const keep = []; let prev = NaN;
+  for (const i of idx) { if (T[i] === prev) continue; keep.push(i); prev = T[i]; }
+  const n = keep.length;
+  const d = { t: new Float64Array(n), vac: new Float64Array(n), load: new Float64Array(n), coal: new Float64Array(n) };
+  keep.forEach((i, k) => { d.t[k] = T[i]; d.vac[k] = V[i]; d.load[k] = L[i]; d.coal[k] = C[i]; });
+  ["vac", "load", "coal"].forEach((k) => interpolate(d[k], 10));
+  const good = (a) => a.some(ok);
+  if (n < 10 || !good(d.vac) || !good(d.load) || !good(d.coal)) {
+    S.data = null; S.res = null; renderAll();
+    const bad = [!good(d.vac) && "vacuum", !good(d.load) && "load", !good(d.coal) && "coal"].filter(Boolean);
+    setStatus(n < 10 ? "Fewer than 10 rows with a readable time." : `No numbers found in the ${bad.join(", ")} column. Check the column choice.`, true);
+    return;
+  }
+  S.data = d;
+  const span = d.t[n - 1] - d.t[0];
+  const dropped = rows - n;
+  setStatus(`${n.toLocaleString()} rows · ${fmtDur(span)} of data${dropped ? ` · ${dropped.toLocaleString()} rows skipped (no time or duplicate)` : ""}`);
+  runAnalysis(true);
+}
+function fmtDur(s) { if (s < 120) return Math.round(s) + " s"; if (s < 7200) return Math.round(s / 60) + " min"; return (s / 3600).toFixed(1) + " h"; }
+
+/* ---------- analysis ---------- */
+function rollingMedian(t, y, w) {
+  const n = t.length, out = new Float64Array(n), buf = []; let j = 0;
+  for (let i = 0; i < n; i++) {
+    while (t[j] <= t[i] - w) j++;
+    buf.length = 0; for (let k = j; k <= i; k++) if (ok(y[k])) buf.push(y[k]);
+    if (!buf.length) { out[i] = NaN; continue; }
+    buf.sort((a, b) => a - b); const h = buf.length >> 1;
+    out[i] = buf.length % 2 ? buf[h] : (buf[h - 1] + buf[h]) / 2;
+  }
+  return out;
+}
+function rollingMin(t, y, w) {
+  const n = t.length, out = new Float64Array(n), dq = new Int32Array(n); let h = 0, tl = 0;
+  for (let i = 0; i < n; i++) {
+    if (ok(y[i])) { while (tl > h && y[dq[tl - 1]] >= y[i]) tl--; dq[tl++] = i; }
+    while (tl > h && t[dq[h]] <= t[i] - w) h++;
+    out[i] = tl > h ? y[dq[h]] : NaN;
+  }
+  return out;
+}
+function meanR(y, a, b) { let s = 0, c = 0; for (let i = a; i <= b; i++) if (ok(y[i])) { s += y[i]; c++; } return c ? s / c : NaN; }
+function stdR(y, a, b, m) { let s = 0, c = 0; for (let i = a; i <= b; i++) if (ok(y[i])) { s += (y[i] - m) ** 2; c++; } return c ? Math.sqrt(s / c) : NaN; }
+
+function params() {
+  const g = (id, def, min) => { const v = parseFloat($(id).value); return ok(v) && v >= min ? v : def; };
+  const thr = parseFloat($("pCoalThr").value);
+  return {
+    rise: g("pRise", 0.005, 1e-6), riseWindow: g("pRiseWin", 120, 1), baseline: g("pBase", 60, 1),
+    observe: g("pObs", 600, 1), settle: g("pSettle", 60, 1), smooth: g("pSmooth", 5, 1),
+    coalThr: ok(thr) && thr >= 0 ? thr : null,
+  };
+}
+
+function analyze(d, p) {
+  const { t } = d, n = t.length;
+  const vs = rollingMedian(t, d.vac, p.smooth), rmin = rollingMin(t, vs, p.riseWindow);
+  const events = []; let next = -Infinity;
+  for (let i = 0; i < n; i++) {
+    if (t[i] < next || !(vs[i] - rmin[i] >= p.rise)) continue;
+    const j0 = lowerBound(t, t[i] - p.riseWindow);
+    let mn = Infinity; for (let k = j0; k <= i; k++) if (vs[k] < mn) mn = vs[k];
+    let s = i; for (let k = i; k >= j0; k--) if (vs[k] <= mn + 0.2 * p.rise) { s = k; break; }
+    const e = measure(d, vs, s, p); if (e) events.push(e);
+    next = t[s] + p.observe;
+  }
+  events.forEach((e, k) => (e.n = k + 1));
+  return { events, vs, p };
+}
+
+function measure(d, vs, s, p) {
+  const { t, vac, load, coal } = d, ts = t[s];
+  const a = lowerBound(t, ts - p.baseline), e = upperBound(t, ts + p.observe) - 1;
+  const vac0 = meanR(vac, a, s), load0 = meanR(load, a, s), coal0 = meanR(coal, a, s);
+  if (!ok(vac0) || !ok(load0) || !ok(coal0)) return null;
+  let vpk = -Infinity, vpkI = -1, lmin = Infinity, lminI = -1, cmax = -Infinity, cmaxI = -1;
+  for (let i = s; i <= e; i++) {
+    if (vs[i] > vpk) { vpk = vs[i]; vpkI = i; }
+    if (load[i] < lmin) { lmin = load[i]; lminI = i; }
+    if (coal[i] > cmax) { cmax = coal[i]; cmaxI = i; }
+  }
+  if (lminI < 0 || cmaxI < 0 || vpkI < 0) return null;
+  const tEnd = t[e], fI = lowerBound(t, tEnd - p.settle);
+  const loadEnd = meanR(load, fI, e), coalEnd = meanR(coal, fI, e), vacEnd = meanR(vac, fI, e);
+  const thr = p.coalThr != null ? p.coalThr : Math.max(3 * stdR(coal, a, s, coal0), 0.1);
+  let respI = -1; for (let i = s; i <= e; i++) if (coal[i] - coal0 >= thr) { respI = i; break; }
+  const vacRise = vpk - vac0, drop = load0 - lmin, per = vacRise > 0 ? vacRise / 0.01 : NaN;
+  return {
+    s, e, t0: ts, vac0, vacPeak: vpk, vacRise, vacPeakAfter: t[vpkI] - ts, vacEnd,
+    load0, loadMin: lmin, loadDrop: drop, loadMinAfter: t[lminI] - ts, loadEnd, loadEndChange: loadEnd - load0,
+    coal0, coalMax: cmax, coalInc: cmax - coal0, coalRespAfter: respI < 0 ? NaN : t[respI] - ts, coalMaxAfter: t[cmaxI] - ts,
+    coalEnd, coalEndInc: coalEnd - coal0, mwPer: drop / per, coalPer: (coalEnd - coal0) / per,
+    sc0: load0 ? coal0 / load0 : NaN, sc1: loadEnd ? coalEnd / loadEnd : NaN,
+    recovered: drop > 0 ? loadEnd >= load0 - 0.25 * drop : true,
+    partial: tEnd - ts < p.observe * 0.9, thr,
+  };
+}
+
+function runAnalysis(resetSel) {
+  if (!S.data) return;
+  S.res = analyze(S.data, params());
+  if (resetSel || S.sel >= S.res.events.length) S.sel = 0;
+  S.cursor = null;
+  renderAll();
+}
+
+/* ---------- charts ---------- */
+function niceStep(range, count) {
+  const raw = range / count, mag = Math.pow(10, Math.floor(Math.log10(raw))), r = raw / mag;
+  return (r < 1.5 ? 1 : r < 3 ? 2 : r < 7 ? 5 : 10) * mag;
+}
+const TIME_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400, 172800, 604800];
+function timeTicks(x0, x1, px) {
+  const want = Math.max(2, Math.floor(px / 90)), span = x1 - x0;
+  const step = TIME_STEPS.find((s) => span / s <= want) || 604800;
+  const out = []; for (let v = Math.ceil(x0 / step) * step; v <= x1; v += step) out.push({ v, label: fmtTime(v, true) });
+  return out;
+}
+function relTicks(t0) {
+  return (x0, x1, px) => {
+    const step = niceStep(x1 - x0, Math.max(2, Math.floor(px / 80)));
+    const out = []; for (let v = Math.ceil((x0 - t0) / step) * step; v <= x1 - t0 + 1e-9; v += step) out.push({ v: v + t0, label: (v > 0 ? "+" : "") + Math.round(v) + " s" });
+    return out;
+  };
+}
+
+function drawChart(cv, c) {
+  const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+  if (!W || !H) return null;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const padL = 62, padR = 10, padT = 20, padB = c.ticks ? 22 : 4, pw = W - padL - padR, ph = H - padT - padB;
+  const { x, y, x0, x1 } = c;
+  const X = (v) => padL + ((v - x0) / (x1 - x0)) * pw;
+  const i0 = Math.max(0, lowerBound(x, x0) - 1), i1 = Math.min(x.length - 1, upperBound(x, x1));
+  let lo = Infinity, hi = -Infinity;
+  for (let i = i0; i <= i1; i++) { const v = y[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
+  (c.hlines || []).forEach((h) => { if (ok(h.y)) { if (h.y < lo) lo = h.y; if (h.y > hi) hi = h.y; } });
+  if (!ok(lo) || !ok(hi)) { lo = 0; hi = 1; }
+  if (hi - lo < 1e-9) { const m = Math.abs(lo) * 0.01 || 0.5; lo -= m; hi += m; }
+  const py = (hi - lo) * 0.08; lo -= py; hi += py;
+  const Y = (v) => padT + ((hi - v) / (hi - lo)) * ph;
+
+  const grid = cssVar("--grid"), muted = cssVar("--muted"), line = cssVar("--line");
+  g.font = '11px "IBM Plex Mono", ui-monospace, monospace';
+  g.lineWidth = 1;
+  // bands
+  (c.bands || []).forEach((b) => {
+    const a = Math.max(padL, X(b.x0)), z = Math.min(padL + pw, X(b.x1));
+    if (z > a) { g.fillStyle = cssVar(b.sel ? "--band-sel" : "--band"); g.fillRect(a, padT, z - a, ph); }
+  });
+  // y grid
+  const step = niceStep(hi - lo, ph < 110 ? 3 : 4), dec = Math.max(0, -Math.floor(Math.log10(step) + 1e-9));
+  g.textAlign = "right"; g.textBaseline = "middle";
+  for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-12; v += step) {
+    const yy = Math.round(Y(v)) + 0.5;
+    g.strokeStyle = grid; g.beginPath(); g.moveTo(padL, yy); g.lineTo(padL + pw, yy); g.stroke();
+    if (yy > 20) { g.fillStyle = muted; g.fillText(v.toFixed(dec), padL - 6, yy); }
+  }
+  g.strokeStyle = line; g.beginPath(); g.moveTo(padL + 0.5, padT); g.lineTo(padL + 0.5, padT + ph); g.stroke();
+  // x ticks
+  if (c.ticks) {
+    g.textAlign = "center"; g.textBaseline = "top"; g.fillStyle = muted;
+    let lastR = -Infinity;
+    c.ticks(x0, x1, pw).forEach((tk) => {
+      const xx = Math.round(X(tk.v)) + 0.5; const w = g.measureText(tk.label).width;
+      g.strokeStyle = grid; g.beginPath(); g.moveTo(xx, padT); g.lineTo(xx, padT + ph); g.stroke();
+      if (xx - w / 2 > lastR + 6 && xx + w / 2 < W) { g.fillText(tk.label, xx, padT + ph + 6); lastR = xx + w / 2; }
+    });
+  }
+  g.save(); g.beginPath(); g.rect(padL, padT - 2, pw, ph + 4); g.clip();
+  // reference lines
+  (c.hlines || []).forEach((h) => { if (!ok(h.y)) return; g.strokeStyle = h.color; g.setLineDash(h.dash || [4, 4]); g.beginPath(); const yy = Math.round(Y(h.y)) + 0.5; g.moveTo(padL, yy); g.lineTo(padL + pw, yy); g.stroke(); });
+  (c.vlines || []).forEach((v) => { if (!ok(v.x)) return; g.strokeStyle = v.color; g.setLineDash(v.dash || [4, 4]); g.beginPath(); const xx = Math.round(X(v.x)) + 0.5; g.moveTo(xx, padT); g.lineTo(xx, padT + ph); g.stroke(); });
+  g.setLineDash([]);
+  // series
+  g.strokeStyle = c.color; g.lineWidth = c.lw || 1.3; g.lineJoin = "round"; g.beginPath();
+  if (i1 - i0 > pw * 2) {
+    let col = null, mn = 0, mx = 0, started = false;
+    const flush = () => { if (col == null) return; if (!started) { g.moveTo(col, Y(mn)); started = true; } else g.lineTo(col, Y(mn)); g.lineTo(col, Y(mx)); };
+    for (let i = i0; i <= i1; i++) { const v = y[i]; if (!ok(v)) continue; const cx = Math.round(X(x[i])); if (cx !== col) { flush(); col = cx; mn = mx = v; } else { if (v < mn) mn = v; if (v > mx) mx = v; } }
+    flush();
+  } else {
+    let pen = false;
+    for (let i = i0; i <= i1; i++) { const v = y[i]; if (!ok(v)) { pen = false; continue; } const px = X(x[i]), pyy = Y(v); if (pen) g.lineTo(px, pyy); else { g.moveTo(px, pyy); pen = true; } }
+  }
+  g.stroke();
+  // markers
+  (c.marks || []).forEach((m) => { if (!ok(m.x) || !ok(m.y)) return; g.fillStyle = m.color; g.strokeStyle = cssVar("--panel"); g.lineWidth = 2; g.beginPath(); g.arc(X(m.x), Y(m.y), 4.5, 0, Math.PI * 2); g.fill(); g.stroke(); });
+  // cursor
+  if (c.cursor != null && c.cursor >= x0 && c.cursor <= x1) {
+    const xx = Math.round(X(c.cursor)) + 0.5; g.strokeStyle = cssVar("--ink"); g.globalAlpha = 0.45; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(xx, padT); g.lineTo(xx, padT + ph); g.stroke(); g.globalAlpha = 1;
+    const k = nearest(x, c.cursor); if (ok(y[k])) { g.fillStyle = c.color; g.beginPath(); g.arc(X(x[k]), Y(y[k]), 3.5, 0, Math.PI * 2); g.fill(); }
+  }
+  g.restore();
+  return { inv: (px) => x0 + ((px - padL) / pw) * (x1 - x0), padL, pw };
+}
+function nearest(a, v) { const i = lowerBound(a, v); if (i <= 0) return 0; if (i >= a.length) return a.length - 1; return v - a[i - 1] < a[i] - v ? i - 1 : i; }
+
+/* ---------- rendering ---------- */
+function renderAll() { renderTiles(); renderOverview(); renderDetail(); renderTable(); }
+
+function renderTiles() {
+  const ev = S.res ? S.res.events : [], u = coalUnit();
+  const avg = (k) => { const v = ev.map((e) => e[k]).filter(ok); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : NaN; };
+  const rec = ev.filter((e) => e.recovered).length;
+  const tiles = [
+    ["", "Vacuum rises found", S.res ? String(ev.length) : "–", "", S.res ? `≥ ${S.res.p.rise} kg/cm² abs within ${S.res.p.riseWindow} s` : "Upload a file"],
+    ["vac", "Avg vacuum rise", f(avg("vacRise"), 4), "kg/cm²", "peak minus before"],
+    ["load", "Avg max load drop", f(avg("loadDrop"), 2), "MW", ev.length ? `${rec} of ${ev.length} events recovered load` : ""],
+    ["coal", "Avg extra coal (settled)", sg(avg("coalEndInc"), 2), u, `max +${f(avg("coalInc"), 2)} ${u}`],
+    ["load", "MW lost per 0.01", f(avg("mwPer"), 2), "MW", "per 0.01 kg/cm² rise"],
+    ["coal", "Extra coal per 0.01", sg(avg("coalPer"), 2), u, "per 0.01 kg/cm² rise"],
+    ["coal", "Coal starts rising", f(avg("coalRespAfter"), 0), "s", "after vacuum starts rising"],
+    ["", "Coal per MW", f(avg("sc0"), 4) + " → " + f(avg("sc1"), 4), "", `${u} per MW, before → settled`],
+  ];
+  $("tiles").innerHTML = tiles.map(([cls, k, v, unit, sub]) => `<div class="tile ${cls}"><span class="label">${k}</span><span class="v">${v}${unit ? `<small>${esc(unit)}</small>` : ""}</span><span class="s">${esc(sub)}</span></div>`).join("");
+  // the specific coal tile has long text; keep it readable
+  const lastV = $("tiles").lastElementChild.querySelector(".v"); lastV.style.fontSize = "21px";
+}
+
+function renderOverview() {
+  const d = S.data; $("ovCoalLbl").textContent = `Coal ${coalUnit()}`;
+  ["ovVac", "ovLoad", "ovCoal"].forEach((id) => { const cv = $(id); const g = cv.getContext("2d"); cv.width = cv.clientWidth; g.clearRect(0, 0, cv.width, cv.height); });
+  if (!d) return;
+  const n = d.t.length, x0 = d.t[0], x1 = d.t[n - 1] > x0 ? d.t[n - 1] : x0 + 1;
+  const bands = (S.res ? S.res.events : []).map((e, i) => ({ x0: e.t0, x1: e.t0 + S.res.p.observe, sel: i === S.sel }));
+  const base = { x: d.t, x0, x1, bands };
+  S.maps.ov = drawChart($("ovVac"), { ...base, y: d.vac, color: cssVar("--vac"), lw: 1 });
+  drawChart($("ovLoad"), { ...base, y: d.load, color: cssVar("--load"), lw: 1 });
+  drawChart($("ovCoal"), { ...base, y: d.coal, color: cssVar("--coal"), lw: 1, ticks: timeTicks });
+}
+
+function renderDetail() {
+  const ev = S.res ? S.res.events : [], e = ev[S.sel], u = coalUnit();
+  $("dtCoalLbl").textContent = `Coal ${u}`;
+  $("prevBtn").disabled = !e || S.sel === 0; $("nextBtn").disabled = !e || S.sel >= ev.length - 1;
+  if (!e) {
+    $("h-ev").textContent = "Event";
+    $("story").textContent = S.data ? `No vacuum rise of ${S.res.p.rise} kg/cm² abs or more within ${S.res.p.riseWindow} s was found. Try a smaller minimum rise under Detection.` : "Upload a CSV to see events here.";
+    ["dtVac", "dtLoad", "dtCoal"].forEach((id) => { const cv = $(id); cv.width = cv.clientWidth; cv.getContext("2d").clearRect(0, 0, cv.width, cv.height); });
+    $("readout").textContent = ""; return;
+  }
+  const p = S.res.p, d = S.data;
+  $("h-ev").textContent = `Event ${e.n} of ${ev.length}`;
+  const rec = e.recovered
+    ? `Load came back to within ${f(Math.abs(e.loadEndChange), 1)} MW of where it started.`
+    : `Load did not recover: it settled ${f(-e.loadEndChange, 1)} MW lower.`;
+  const coal = ok(e.coalRespAfter)
+    ? `Coal started rising <b>${f(e.coalRespAfter, 0)} s</b> after the vacuum and settled <b>${f(Math.abs(e.coalEndInc), 2)} ${esc(u)}</b> ${e.coalEndInc >= 0 ? "higher" : "lower"} (max ${sg(e.coalInc, 2)} ${esc(u)} at ${f(e.coalMaxAfter, 0)} s).`
+    : `Coal did not rise by more than ${f(e.thr, 2)} ${esc(u)} during the ${p.observe} s watched.`;
+  $("story").innerHTML = `At <b>${fmtTime(e.t0)}</b> vacuum rose from <b>${f(e.vac0, 4)}</b> to <b>${f(e.vacPeak, 4)}</b> kg/cm² abs (<b>+${f(e.vacRise, 4)}</b>). ` +
+    `Load fell <b>${f(e.loadDrop, 2)} MW</b>, from ${f(e.load0, 1)} to ${f(e.loadMin, 1)} MW, lowest <b>${f(e.loadMinAfter, 0)} s</b> after the rise. ${coal} ${rec}` +
+    (e.partial ? ` <span class="tag">File ends before the watch period is over</span>` : "");
+  const x0 = e.t0 - Math.max(p.baseline * 2, 60), x1 = e.t0 + p.observe;
+  const muted = cssVar("--muted"), cLoad = cssVar("--load"), cCoal = cssVar("--coal"), cVac = cssVar("--vac");
+  const vlines = [{ x: e.t0, color: muted, dash: [2, 3] }, { x: e.t0 + e.loadMinAfter, color: cLoad }, { x: e.t0 + e.coalRespAfter, color: cCoal }];
+  const base = { x: d.t, x0, x1, vlines, cursor: S.cursor, bands: [{ x0: e.t0 - p.baseline, x1: e.t0, sel: false }] };
+  S.maps.dt = drawChart($("dtVac"), { ...base, y: d.vac, color: cVac, hlines: [{ y: e.vac0, color: muted }], marks: [{ x: e.t0 + e.vacPeakAfter, y: e.vacPeak, color: cVac }] });
+  drawChart($("dtLoad"), { ...base, y: d.load, color: cLoad, hlines: [{ y: e.load0, color: muted }], marks: [{ x: e.t0 + e.loadMinAfter, y: e.loadMin, color: cLoad }] });
+  drawChart($("dtCoal"), { ...base, y: d.coal, color: cCoal, hlines: [{ y: e.coal0, color: muted }, { y: e.coalEnd, color: cCoal, dash: [1, 3] }], ticks: relTicks(e.t0) });
+  renderReadout();
+}
+
+function renderReadout() {
+  const e = S.res && S.res.events[S.sel], d = S.data;
+  if (!e) return;
+  if (S.cursor == null) { $("readout").textContent = "Hover or drag over the charts to read values. Shaded area = baseline period."; return; }
+  const k = nearest(d.t, S.cursor);
+  $("readout").innerHTML = `<span><b>${fmtTime(d.t[k])}</b> (${sg(d.t[k] - e.t0, 0)} s)</span>` +
+    `<span style="color:var(--vac)">vac <b>${f(d.vac[k], 4)}</b> (${sg(d.vac[k] - e.vac0, 4)})</span>` +
+    `<span style="color:var(--load)">load <b>${f(d.load[k], 2)}</b> MW (${sg(d.load[k] - e.load0, 2)})</span>` +
+    `<span style="color:var(--coal)">coal <b>${f(d.coal[k], 2)}</b> ${esc(coalUnit())} (${sg(d.coal[k] - e.coal0, 2)})</span>`;
+}
+
+const COLS = [
+  ["#", (e) => e.n], ["Start", (e) => fmtTime(e.t0)],
+  ["Before", (e) => f(e.vac0, 4), "vac"], ["Peak", (e) => f(e.vacPeak, 4), "vac"], ["Rise", (e) => "+" + f(e.vacRise, 4), "vac"],
+  ["Before MW", (e) => f(e.load0, 1), "load"], ["Max drop", (e) => f(e.loadDrop, 2), "load"], ["Lowest at s", (e) => f(e.loadMinAfter, 0), "load"], ["Settled Δ", (e) => sg(e.loadEndChange, 2), "load"], ["Per 0.01", (e) => f(e.mwPer, 2), "load"],
+  ["Before", (e) => f(e.coal0, 2), "coal"], ["Max +", (e) => f(e.coalInc, 2), "coal"], ["Starts at s", (e) => f(e.coalRespAfter, 0), "coal"], ["Settled +", (e) => sg(e.coalEndInc, 2), "coal"], ["Per 0.01", (e) => sg(e.coalPer, 2), "coal"],
+  ["Coal/MW before", (e) => f(e.sc0, 4)], ["Coal/MW settled", (e) => f(e.sc1, 4)],
+  ["Load", (e) => (e.recovered ? "Recovered" : "Not recovered")],
+];
+
+function renderTable() {
+  const ev = S.res ? S.res.events : [];
+  if (!ev.length) { $("tableWrap").innerHTML = `<div class="empty">${S.data ? "No events with the current detection settings." : "No data loaded."}</div>`; return; }
+  const u = esc(coalUnit());
+  const head1 = `<tr><th colspan="2"></th><th class="grp vac" colspan="3">Vacuum kg/cm² abs</th><th class="grp load" colspan="5">Load MW</th><th class="grp coal" colspan="5">Coal ${u}</th><th colspan="3"></th></tr>`;
+  const head2 = "<tr>" + COLS.map((c) => `<th>${esc(c[0])}</th>`).join("") + "</tr>";
+  const body = ev.map((e, i) => "<tr data-i=\"" + i + "\" tabindex=\"0\"" + (i === S.sel ? ' class="sel"' : "") + ">" + COLS.map((c, j) => {
+    const v = c[1](e);
+    if (j === COLS.length - 1) return `<td><span class="pill ${e.recovered ? "ok" : "no"}">${v}</span></td>`;
+    return `<td>${esc(v)}</td>`;
+  }).join("") + "</tr>").join("");
+  $("tableWrap").innerHTML = `<table><thead>${head1}${head2}</thead><tbody>${body}</tbody></table>`;
+}
+
+function select(i) {
+  const ev = S.res ? S.res.events : []; if (!ev.length) return;
+  S.sel = Math.max(0, Math.min(ev.length - 1, i)); S.cursor = null;
+  renderOverview(); renderDetail();
+  $("tableWrap").querySelectorAll("tbody tr").forEach((r) => r.classList.toggle("sel", +r.dataset.i === S.sel));
+}
+
+/* ---------- interactions ---------- */
+const fileIn = $("file"), drop = $("drop");
+fileIn.addEventListener("change", () => { if (fileIn.files[0]) openSource(fileIn.files[0], fileIn.files[0].name, false); fileIn.value = ""; });
+drop.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); fileIn.click(); } });
+["dragenter", "dragover"].forEach((t) => drop.addEventListener(t, (ev) => { ev.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach((t) => drop.addEventListener(t, (ev) => { ev.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", (ev) => { const fl = ev.dataTransfer.files[0]; if (fl) openSource(fl, fl.name, false); });
+$("sampleBtn").addEventListener("click", () => openSource(makeSample(), "plant_sample_2h.csv", true));
+
+["colTime", "colVac", "colLoad", "dateOrder"].forEach((id) => $(id).addEventListener("change", loadData));
+$("coalList").addEventListener("change", loadData);
+$("coalUnit").addEventListener("input", () => renderAll());
+let tmr = null;
+["pRise", "pRiseWin", "pBase", "pObs", "pSettle", "pSmooth", "pCoalThr"].forEach((id) => $(id).addEventListener("input", () => { clearTimeout(tmr); tmr = setTimeout(() => runAnalysis(false), 250); }));
+
+$("prevBtn").addEventListener("click", () => select(S.sel - 1));
+$("nextBtn").addEventListener("click", () => select(S.sel + 1));
+$("tableWrap").addEventListener("click", (ev) => { const r = ev.target.closest("tr[data-i]"); if (r) select(+r.dataset.i); });
+$("tableWrap").addEventListener("keydown", (ev) => { const r = ev.target.closest("tr[data-i]"); if (r && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); select(+r.dataset.i); } });
+
+$("ov").addEventListener("click", (ev) => {
+  const m = S.maps.ov; if (!m || !S.res) return;
+  const cv = ev.target.closest("canvas"); if (!cv) return;
+  const x = m.inv(ev.clientX - cv.getBoundingClientRect().left), ob = S.res.p.observe;
+  let best = -1, bd = Infinity;
+  S.res.events.forEach((e, i) => { const dd = x < e.t0 ? e.t0 - x : x > e.t0 + ob ? x - e.t0 - ob : 0; if (dd < bd) { bd = dd; best = i; } });
+  const tol = (S.data.t[S.data.t.length - 1] - S.data.t[0]) * 0.01;
+  if (best >= 0 && bd <= tol) { select(best); $("detailPanel").scrollIntoView({ behavior: "smooth", block: "nearest" }); }
+});
+function onMove(ev) {
+  const m = S.maps.dt; if (!m) return;
+  const cv = ev.target.closest("canvas"); if (!cv) return;
+  const pt = ev.touches ? ev.touches[0] : ev;
+  S.cursor = m.inv(pt.clientX - cv.getBoundingClientRect().left); renderDetail();
+}
+$("dt").addEventListener("mousemove", onMove);
+$("dt").addEventListener("touchmove", (ev) => { onMove(ev); ev.preventDefault(); }, { passive: false });
+$("dt").addEventListener("mouseleave", () => { S.cursor = null; renderDetail(); });
+$("dtVac").addEventListener("keydown", (ev) => {
+  const e = S.res && S.res.events[S.sel]; if (!e || (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight")) return;
+  ev.preventDefault(); S.cursor = (S.cursor ?? e.t0) + (ev.key === "ArrowRight" ? 5 : -5); renderDetail();
+});
+
+$("copyBtn").addEventListener("click", () => {
+  const ev = S.res ? S.res.events : []; const st = $("copyStatus");
+  if (!ev.length) { st.textContent = "No events to copy."; return; }
+  const u = coalUnit();
+  const hdr = ["Event", "Start", "Vac before", "Vac peak", "Vac rise", "Load before MW", "Max load drop MW", "Lowest load after s", "Settled load change MW", "MW drop per 0.01 vac",
+    `Coal before ${u}`, `Max coal increase ${u}`, "Coal starts rising after s", `Settled coal increase ${u}`, `Coal increase per 0.01 vac`, "Coal/MW before", "Coal/MW settled", "Load recovered"];
+  const rows = ev.map((e) => [e.n, fmtTime(e.t0), f(e.vac0, 4), f(e.vacPeak, 4), f(e.vacRise, 4), f(e.load0, 2), f(e.loadDrop, 2), f(e.loadMinAfter, 0), f(e.loadEndChange, 2), f(e.mwPer, 2),
+    f(e.coal0, 2), f(e.coalInc, 2), f(e.coalRespAfter, 0), f(e.coalEndInc, 2), f(e.coalPer, 2), f(e.sc0, 4), f(e.sc1, 4), e.recovered ? "Yes" : "No"].map((v) => (v === "–" ? "" : v)));
+  const tsv = [hdr, ...rows].map((r) => r.join("\t")).join("\n");
+  const fallback = () => {
+    const ta = document.createElement("textarea"); ta.value = tsv; ta.setAttribute("aria-label", "Event table to copy");
+    ta.style.cssText = "width:100%;height:120px;font-family:var(--font-mono);font-size:11px;background:var(--bg);color:var(--ink);border:1px solid var(--line)";
+    st.textContent = "Copying was blocked here. Select the text below and copy it:"; st.appendChild(ta); ta.focus(); ta.select();
+  };
+  try { navigator.clipboard.writeText(tsv).then(() => { st.textContent = `Copied ${ev.length} events. Paste into Excel.`; }, fallback); } catch (_) { fallback(); }
+});
+
+let rz = null;
+new ResizeObserver(() => { clearTimeout(rz); rz = setTimeout(() => { renderOverview(); renderDetail(); }, 60); }).observe(document.querySelector(".main"));
+const redraw = () => { renderOverview(); renderDetail(); };
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", redraw);
+new MutationObserver(redraw).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(redraw);
+
+/* ---------- example data: 2 h of 1-s readings with three vacuum upsets ---------- */
+function makeSample() {
+  let seed = 7; const rnd = () => { seed |= 0; seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const gauss = () => Math.sqrt(-2 * Math.log(rnd() + 1e-12)) * Math.cos(2 * Math.PI * rnd());
+  const step = (t, t0, tau) => (t < t0 ? 0 : 1 - Math.exp(-(t - t0) / tau));
+  // [start s, vacuum rise, rise time constant s, recovery start s, share of the needed coal the mills could give]
+  const upsets = [[1500, 0.018, 20, 2700, 1.0], [3900, 0.010, 60, 5100, 1.0], [6000, 0.030, 15, 99999, 0.65]];
+  const MW_PER_VAC = 260, MW_PER_COAL = 1.75, LAG = 25;
+  const lines = ["Timestamp,COND VAC (kg/cm2 abs),GEN LOAD (MW),COAL FEEDER A (t/h),COAL FEEDER B (t/h),COAL FEEDER C (t/h),MS PRESS (kg/cm2)"];
+  const start = Date.UTC(2026, 9, 1, 10, 0, 0) / 1000;
+  for (let t = 0; t < 7200; t++) {
+    let dv = 0.002 * Math.sin(t / 900), dc = 0;
+    for (const [t0, a, tau, t1, cap] of upsets) {
+      dv += a * (step(t, t0, tau) - step(t, t1, 150));
+      dc += cap * (a * MW_PER_VAC / MW_PER_COAL) * (step(t, t0 + LAG, 80) - step(t, t1 + LAG, 150));
+    }
+    const vac = 0.102 + dv + gauss() * 0.0003;
+    const coal = 300 + dc;
+    const load = 520 - MW_PER_VAC * (dv - 0.002 * Math.sin(t / 900)) + MW_PER_COAL * dc + gauss() * 0.25;
+    const d = new Date((start + t) * 1000);
+    const ts = `${pad2(d.getUTCDate())}-${pad2(d.getUTCMonth() + 1)}-${d.getUTCFullYear()} ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}:${pad2(d.getUTCSeconds())}`;
+    const fa = coal * 0.34 + gauss() * 0.15, fb = coal * 0.33 + gauss() * 0.15, fc = coal * 0.33 + gauss() * 0.15;
+    lines.push(`${ts},${vac.toFixed(4)},${load.toFixed(2)},${fa.toFixed(2)},${fb.toFixed(2)},${fc.toFixed(2)},${(165 + gauss() * 0.3).toFixed(2)}`);
+  }
+  return lines.join("\n");
+}
+
+renderAll();
+if (window.Papa) openSource(makeSample(), "plant_sample_2h.csv", true);
+else setStatus("The CSV reader did not load. Check your connection and reload the page.", true);
+})();
+</script>
